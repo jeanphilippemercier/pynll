@@ -26,7 +26,7 @@ from setuptools_cpp import (CMakeExtension, ExtensionBuilder,
 
 ext_modules = [
     # An extension with a custom <project_root>/src/ext2/CMakeLists.txt:
-    CMakeExtension(f"nlloc.ext2", sourcedir="nlloc"),
+    CMakeExtension(f"nlloc.ext2", sourcedir="nlloc/"),
 ]
 
 
