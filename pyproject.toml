@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "pynll"
+version = "0.1.0"
+description = "wrapper around A. Lomax NLLoc"
+authors = ["jpmercier <jpmercier01@gmail.com>"]
+license = "GPL V3"
+build = "build.py"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+requires = ["poetry>=0.12", "wheel", "setuptools-cpp"]
