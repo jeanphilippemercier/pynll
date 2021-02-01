@@ -81,7 +81,7 @@ typedef struct octnode
 	int level;                      // level of node in oect-tree hierarchy (0 = top, largest)
 	double value;			/* node value */
 	OctNodePtr child[2][2][2];	/* child nodes */
-	char isLeaf;			/* leaf flag, 1=leaf, for read/write spherical: -1=NULL node */
+	char isLeaf;			/* leaf flag, 1=leaf */
 	void *pdata;		/* additional data */
 } OctNode;
 
@@ -179,8 +179,7 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
 int getScatterSampleResultTree(ResultTreeNode* prtree, int value_type, int num_scatter,
         double integral, float* fdata, int npoints, int* pfdata_index,
         double oct_node_value_max, double *poct_tree_scatter_volume);
-double convertOcttreeValuesToProbabilityDensity(ResultTreeNode* prtree, int value_type, double integral, double oct_node_value_ref);
-double normalizeProbabilityDensityOcttree(ResultTreeNode* prtree, double integral, double norm);
+double convertOcttreeValuesToProb(ResultTreeNode* prtree, double sum, double oct_node_value_max);
 double integrateResultTreeAtLevels(ResultTreeNode* prtree, int value_type, double sum, double oct_node_value_max, int level_min, int level_max);
 double integrateResultTree(ResultTreeNode* prtree, int value_type, double sum, double oct_node_value_max);
 ResultTreeNode* createResultTree(ResultTreeNode* prtree, ResultTreeNode* pnew_rtree);

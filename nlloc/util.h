@@ -36,7 +36,7 @@
 
 
 #ifndef MAXLINE
-#define MAXLINE 1024    // 20200125 AJL - changed from 101 to 1204
+#define MAXLINE 101
 #endif
 
 #ifndef VERY_SMALL_DOUBLE

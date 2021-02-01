@@ -671,10 +671,10 @@ int read_grd(struct surface *ps, int imessage) {
     int istat;
     long idatasize;
     FILE *fp_grd;
-    char *phline, hline[MAXLINE_LONG], filename[MAXLINE_LONG], regstr[MAXLINE_LONG];
+    char *phline, hline[MAXLINE_LONG], filename[MAXLINE], regstr[MAXLINE];
     char *pchr, *psubstr;
     double zval;
-    char grdfilename[MAXLINE_LONG];
+    char grdfilename[MAXLINE];
 
 
     // check if binary file with ascii header file

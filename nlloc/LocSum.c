@@ -100,9 +100,8 @@ int main(int argc, char** argv) {
     if (argc < 5) {
         nll_puterr("ERROR wrong number of command line arguments.");
         disp_usage(PNAME,
-                "<size_gridfile> <scat_decim> <output_file_root> <add_file_list>"
-                "[Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax[,YX] | latCent,longCent,radius[,YX]]]]]]]"
-                "\n  if ,YX specified cut is in hypo y/x (km), lat/lon otherwise"
+                "<size_gridfile> <scat_decim> <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax[,YX]]]]]]]"
+                "\n  if ,YX specfied cut is in hypo y/x (km), lat/lon otherwise"
                 );
         exit(-1);
     }
@@ -123,22 +122,6 @@ int main(int argc, char** argv) {
 
 }
 
-/** function to calculate distance between 2 XYZ points */
-
-double Dist2D_LocSum(double x1, double x2, double y1, double y2, int latlon) {
-
-    if (latlon) {
-        return (GCDistance(y1, x1, y2, x2));
-        //return(EllipsoidDistance(yval, xval, psta->y, psta->x));
-    } else {
-        double dx, dy;
-        dx = x1 - x2;
-        dy = y1 - y2;
-        return (sqrt(dx * dx + dy * dy));
-    }
-}
-
-
 int SumLocations(int argc, char** argv) {
 
     int istat;
@@ -152,10 +135,9 @@ int SumLocations(int argc, char** argv) {
     char fn_grid_size[FILENAME_MAX];
     char fn_scatter[FILENAME_MAX];
     char fn_hyp_scat_out[FILENAME_MAX];
-    char fn_hyp_sum_out[FILENAME_MAX];
     char fn_root_out[FILENAME_MAX], fn_hypos_in[FILENAME_MAX],
             fn_scat_out[FILENAME_MAX];
-    FILE *fp_hypo, *fp_dummy, *fp_hyp_sum_out, *fp_hyp_scat_out, *fp_scat_out,
+    FILE *fp_hypo, *fp_dummy, *fp_hyp_scat_out, *fp_scat_out,
             *fp_scat_in, *fp_grid, *fp_hdr;
     float fdata[4], probmax = -VERY_LARGE_FLOAT;
 
@@ -181,11 +163,6 @@ int SumLocations(int argc, char** argv) {
     int CUT_LATLON = 1;
     // 20170321 AJL - added cut in YX loc (km)
     int CUT_YX = 2;
-
-    // 20190123 AJL - added radius cut
-    double latRad = 0.0, longRad = 0.0, radius = 0.0;
-    int CUT_RADIUS_YX = 3;
-    int CUT_RADIUS_LATLON = 4;
 
     GridDesc Grid, locgrid;
     SourceDesc* Srce = NULL;
@@ -236,18 +213,9 @@ int SumLocations(int argc, char** argv) {
         if (nscan == 5 && strcmp(strXY, "YX") == 0) {
             icut = CUT_YX;
             fprintf(stdout, "  YX Cut Limits: Y: %f -> %f, X: %f -> %f\n", latMin, latMax, longMin, longMax);
-        } else if (nscan == 4) {
+        } else {
             icut = CUT_LATLON;
             fprintf(stdout, "  Geog Cut Limits: Lat: %f -> %f, Long: %f -> %f\n", latMin, latMax, longMin, longMax);
-        } else {
-            int nscan = sscanf(argv[10], "%lf,%lf,%lf,%s", &latRad, &longRad, &radius, strXY);
-            if (nscan == 4 && strcmp(strXY, "YX") == 0) {
-                icut = CUT_RADIUS_YX;
-                fprintf(stdout, "  YX Radius Cut: Y: %f, X: %f, Rad: %f\n", latRad, longRad, radius);
-            } else if (nscan == 3) {
-                icut = CUT_RADIUS_LATLON;
-                fprintf(stdout, "  Geog Radius Cut: Lat: %f, Long: %f, Rad: %f\n", latRad, longRad, radius);
-            }
         }
     } else {
         icut = 0;
@@ -284,19 +252,11 @@ int SumLocations(int argc, char** argv) {
 
 
 
-    /* open ascii hypocenter sum file */
-
-    sprintf(fn_hyp_sum_out, "%s.sum.hyp", fn_root_out);
-    if ((fp_hyp_sum_out = fopen(fn_hyp_sum_out, "w")) == NULL) {
-        nll_puterr("ERROR: opening hypocenter sum output file.");
-        return (-1);
-    }
-
     /* open ascii hypocenter/scatter file */
 
     sprintf(fn_hyp_scat_out, "%s.hyp", fn_root_out);
     if ((fp_hyp_scat_out = fopen(fn_hyp_scat_out, "w")) == NULL) {
-        nll_puterr("ERROR: opening hypocenter/scatter ascii output file.");
+        nll_puterr("ERROR: opening scatter ascii output file.");
         return (-1);
     }
 
@@ -356,9 +316,7 @@ int SumLocations(int argc, char** argv) {
             if (strcmp(Hypo.locStat, "ABORTED") == 0) {
                 //nll_puterr("WARNING: location ABORTED, ignoring event");
                 continue;
-            } else if (
-                    locgrid.numz != 2  // 20200812 AJL - Added so that location will be accepted when depth fixed (i.e. numz = 2)
-                    && strcmp(Hypo.locStat, "REJECTED") == 0) {
+            } else if (strcmp(Hypo.locStat, "REJECTED") == 0) {
                 //nll_puterr("WARNING: location REJECTED, ignoring event");
                 continue;
             }
@@ -397,13 +355,8 @@ int SumLocations(int argc, char** argv) {
             if (icut == CUT_LATLON && (Hypo.dlat < latMin || Hypo.dlat > latMax || Hypo.dlong < longMin || Hypo.dlong > longMax)) {
                 CutReject++;
                 iReject = 1;
-            } else if (icut == CUT_YX && (Hypo.y < latMin || Hypo.y > latMax || Hypo.x < longMin || Hypo.x > longMax)) {
-                CutReject++;
-                iReject = 1;
-            } else if (icut == CUT_RADIUS_LATLON && (Dist2D_LocSum(Hypo.dlong, longRad, Hypo.dlat, latRad, 1) > radius)) {
-                CutReject++;
-                iReject = 1;
-            } else if (icut == CUT_RADIUS_YX && (Dist2D_LocSum(Hypo.x, longRad, Hypo.y, latRad, 0) > radius)) {
+            }
+            else if (icut == CUT_YX && (Hypo.y < latMin || Hypo.y > latMax || Hypo.x < longMin || Hypo.x > longMax)) {
                 CutReject++;
                 iReject = 1;
             }
@@ -414,7 +367,6 @@ int SumLocations(int argc, char** argv) {
 
             PhaseFormat = FORMAT_PHASE_2; // 20110105 AJL - to allow long station names
             WriteLocation(fp_hyp_scat_out, &Hypo, Arrival, NumArrivals, fn_hyp_scat_out, 1, 0, 0, &locgrid, 0);
-            WriteLocation(fp_hyp_sum_out, &Hypo, Arrival, NumArrivals, fn_hyp_sum_out, 0, 1, 0, &locgrid, 0); // 20181017 AJL - added
 
             nLocWritten++;
 
@@ -504,7 +456,6 @@ int SumLocations(int argc, char** argv) {
 
     fclose(fp_scat_out);
     fclose(fp_hyp_scat_out);
-    fclose(fp_hyp_sum_out);
 
     /* write message */
     fprintf(stdout,
@@ -543,4 +494,11 @@ int SumLocations(int argc, char** argv) {
 }
 
 
+
+/*------------------------------------------------------------/ */
+/* Anthony Lomax           | email: lomax@faille.unice.fr     / */
+/* UMR Geosciences Azur    | web: www-geoazur.unice.fr/~lomax / */
+/* 250 Rue Albert Einstein | tel: 33 (0) 4 93 95 43 25        / */
+/* 06560 Valbonne, FRANCE  | fax: 33 (0) 4 93 65 27 17        / */
+/*------------------------------------------------------------/ */
 

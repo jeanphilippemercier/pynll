@@ -24,15 +24,12 @@
 #include "../alomax_matrix/alomax_matrix.h"
 #include "matrix_statistics.h"
 
-// 20171122 AJL  #define RA2DE 57.2957795129
-// 20171122 AJL  #define DE2RA 0.01745329252
-#define DE2RA (M_PI/180.0)
-#define RA2DE (180.0/M_PI)
+#define RA2DE 57.2957795129
+#define DE2RA 0.01745329252
 // 20151106 AJL - changed km/deg scaling to be based on sphere with radius 6371, average Earth radius.
 //#define KM2DEG (90.0/10000.0)
 //#define DEG2KM (10000.0/90.0)
-// 20171122 AJL  #define PI 3.14159265359
-#define PI M_PI
+#define PI 3.14159265359
 #define AVG_ERAD 6371.0
 #define KM2DEG (180.0/PI*AVG_ERAD)
 #define DEG2KM (PI*AVG_ERAD/180.0)
@@ -377,7 +374,7 @@ Mtrx3D CalcCovarianceSamplesGlobal(float* fdata, int nSamples, Vect3D* pexpect) 
         x = distance * sin(azimuth * DE2RA); // azimuth is deg CW from North
         y = distance * cos(azimuth * DE2RA);
         z = (fdata[ipos++] - pexpect->z);
-        prob = fdata[ipos++]; // do not use prob since sample density already follow target PDF
+        prob = fdata[ipos++]; // do not use prob since samples follow target PDF
 
         cov.xx += (double) (x * x);
         cov.xy += (double) (x * y);
@@ -686,7 +683,7 @@ Ellipse2D CalcHorizontalErrorEllipse(Mtrx3D *pcov, double del_chi_2) {
     //if ((istat = nll_svdcmp0(A_matrix, 2, 2, W_vector, V_matrix)) < 0) {
     svd_helper(A_matrix, 2, 2, W_vector, V_matrix);
     if (W_vector[0] < SMALL_DOUBLE || W_vector[1] < SMALL_DOUBLE) {
-        fprintf(stderr, "ERROR: invalid SVD singular value for confidence ellipse.");
+        fprintf(stderr, "ERROR: invalid SVD singular value for confidence ellipsoids.");
         ierr = 1;
     } else {
 

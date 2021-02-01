@@ -61,11 +61,7 @@ int CalcConfidenceIntrvl(GridDesc* ptgrid, char* filename);
 
 
 
-/*** Program to convert an octtree grid to a regular grid
- *
- * output grid is optionally normalized by its integral
- *
- */
+/*** Program to process (add, ) 3D grid files */
 
 #define PNAME  "oct2grid"
 
@@ -86,12 +82,10 @@ int main(int argc, char *argv[]) {
         fprintf(stdout, "<%s> ", argv[narg]);
     fprintf(stdout, "\n");
 
-    if (argc < 5) {
-        disp_usage(PNAME, "<input octree> <output grid> <integral_norm_flag> <dx> [<dy> <dz>]");
+    if (argc < 4) {
+        disp_usage(PNAME, "<input octree> <output grid> <dx> [<dy> <dz>]");
         exit(-1);
     }
-
-    message_flag = 99;
 
     apply_oct2grid(argc, argv);
 
@@ -128,15 +122,11 @@ int apply_oct2grid(int argc, char *argv[]) {
         return (-1);
     }
 
-    // normalize flag
-    int integral_norm_flag = 0;
-    sscanf(argv[3], "%d", &integral_norm_flag);
-
-    // create output grid
-    sscanf(argv[4], "%lf", &dx);
-    if (argc > 5) {
-        sscanf(argv[5], "%lf", &dy);
-        sscanf(argv[6], "%lf", &dz);
+    // cread output grid
+    sscanf(argv[3], "%lf", &dx);
+    if (argc > 4) {
+        sscanf(argv[4], "%lf", &dy);
+        sscanf(argv[5], "%lf", &dz);
     } else {
         dz = dy = dx;
     }
@@ -145,24 +135,12 @@ int apply_oct2grid(int argc, char *argv[]) {
     //strcpy(grid_type, "LIKELIHOOD");
     //strcpy(grid_type, "PROB_DENSITY");
     //strcpy(grid_type, "MISFIT");
-
-    // check for global projection
-    if (ptree->isSpherical) {
-        strcpy(MapProjStr[0], "TRANSFORM  GLOBAL");
-    }
-
-
     printf("Convert oct-tree to grid...\n");
     ConvertOctTree2Grid(ptree, dx, dy, dz, NULL, &grid_out);
 
     grid_out.type = GRID_PROB_DENSITY; // TODO: assume input oct-tree grid is relative prob density
     convert_grid_type(&grid_out, 0);
-
-    if (integral_norm_flag) {
-        int flag_normalize = 1;
-        double integral = IntegrateGrid(&grid_out, flag_normalize);
-        printf("Normalized to integral=%f\n", integral);
-    }
+    printf("DEBUG: Grid3d: type:%s\n", grid_out.chr_type);
 
     // output file name
     strcpy(fn_grid_out, argv[2]);
@@ -204,7 +182,7 @@ int CalcConfidenceIntrvl(GridDesc* ptgrid, char* filename) {
     printf("Calculating confidence intervals over grid...\n");
 
     // find maximum value in grid
-    printf("   find maximum value in grid...");
+    printf("   find maximum value in grid...\n");
     double value_max = -1.0;
     for (ix = 0; ix < ptgrid->numx; ix++) {
         for (iy = 0; iy < ptgrid->numy; iy++) {
@@ -215,7 +193,6 @@ int CalcConfidenceIntrvl(GridDesc* ptgrid, char* filename) {
             }
         }
     }
-    printf(" = %f\n", value_max);
 
     for (isrch = 0; isrch < N_STEPS_SRCH; isrch++)
         srch_sum[isrch] = 0.0;

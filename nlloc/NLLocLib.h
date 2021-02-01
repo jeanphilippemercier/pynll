@@ -74,6 +74,12 @@ typedef struct {
 }
 Gauss2LocParams;
 
+/* scatter paramters */
+typedef struct {
+    int npts; /* number of scatter points */
+}
+ScatterParams;
+
 /* station/inst/component parameters */
 typedef struct {
     char label[ARRIVAL_LABEL_LEN]; /* label (i.e. station name) */
@@ -170,28 +176,6 @@ typedef struct {
 }
 MagDesc;
 
-/* Search PDF grid (PRIOR or POSTERIOR */
-// 20190510 AJL - added
-
-typedef struct {
-    int gridType; // grid type, e.g. GRID, OCT_TREE
-    double default_value; // prior value to use where prior undefined
-    char grid_file_path[FILENAME_MAX];
-    // GRID
-    GridDesc grid; // prior grid containing relative prior values over superset or subset of location search volume
-    // OCT-TREE
-    int nGrids;
-    Tree3D **tree3D;    // array of nGrids tree3D oct-trees
-    double *coherence;  // array of nGrids coherences for each corresponding tree3D
-    double coherence_min;  // minimum coherence to use grid
-    double max_total_other_weight;  // maximum total of coherence weight for other events; if exceeded, other event coherences normalized to sum to this value
-    double *weight;  // array of nGrids weights (function of coherence and coherence_min) for each corresponding tree3D
-    // arrivals storage
-    ArrivalDesc** first_motion_arrivals; // arrivals with first-motion readings
-    int *nfirst_motion_arrivals; // number of arrivals with first-motion readings
-}
-SearchPdfGridDesc;
-
 
 
 /*------------------------------------------------------------*/
@@ -214,8 +198,7 @@ EXTERN_TXT int NumEvents;
 EXTERN_TXT int NumEventsLocated;
 EXTERN_TXT int NumLocationsCompleted;
 
-// 20200107 AJL  #define MAX_NUM_OBS_FILES 10000
-#define MAX_NUM_OBS_FILES 20000  // 20200107 AJL
+#define MAX_NUM_OBS_FILES 10000
 EXTERN_TXT int NumObsFiles;
 
 /* number of arrivals read from obs file */
@@ -242,32 +225,20 @@ EXTERN_TXT FILE *fp_model_hdr_S;
 EXTERN_TXT GridDesc model_grid_S;
 
 /* location search type (grid, simulated annealing, Metropolis, etc) */
-#define SEARCH_GRID   0
-#define SEARCH_MET   1
+#define SEARCH_GRID  	0
+#define SEARCH_MET  	1
 #define SEARCH_OCTTREE  2
 EXTERN_TXT int SearchType;
 
-#define PDF_GRID_UNDEF   0
-#define PDF_GRID_GRID   1
-#define PDF_GRID_OCT_TREE   2
-#define PDF_GRID_PRIOR   0
-#define PDF_GRID_POSTERIOR   1
-#define MAX_NUM_PDF_GRID_FILES 1000
-// location search prior  // 20190510 AJL - added
-EXTERN_TXT SearchPdfGridDesc SearchPrior;
-EXTERN_TXT int iUseSearchPrior;
-EXTERN_TXT SearchPdfGridDesc SearchPosterior;
-EXTERN_TXT int iUseSearchPosterior;
-
 /* location method (misfit, etc) */
-#define METH_UNDEF    0
-#define METH_GAU_ANALYTIC   1
-#define METH_GAU_TEST    2
-#define METH_EDT    3
-#define METH_EDT_BOX    4
-#define METH_ML_OT    5
-#define METH_OT_STACK    6
-#define METH_L1_NORM    7         // 20140515 AJL - added for NLDiffLoc
+#define METH_UNDEF  		0
+#define METH_GAU_ANALYTIC  	1
+#define METH_GAU_TEST  		2
+#define METH_EDT  		3
+#define METH_EDT_BOX  		4
+#define METH_ML_OT  		5
+#define METH_OT_STACK  		6
+#define METH_L1_NORM  		7         // 20140515 AJL - added for NLDiffLoc
 EXTERN_TXT int LocMethod;
 EXTERN_TXT int EDT_use_otime_weight;
 EXTERN_TXT int EDT_otime_weight_active;
@@ -334,11 +305,11 @@ EXTERN_TXT EventTimeExtract EventTime;
 EXTERN_TXT long int EventID;
 
 /* magnitude calculation */
-#define MAG_UNDEF   0
-#define MAG_ML_HB   1
-#define MAG_MD_FMAG   2
+#define MAG_UNDEF  	0
+#define MAG_ML_HB  	1
+#define MAG_MD_FMAG  	2
 EXTERN_TXT int NumMagnitudeMethods;
-#define MAX_NUM_MAG_METHODS   2
+#define MAX_NUM_MAG_METHODS  	2
 EXTERN_TXT MagDesc Magnitude[MAX_NUM_MAG_METHODS];
 
 /* station/inst/component parameters */
@@ -356,11 +327,6 @@ EXTERN_TXT int NumLocAlias;
 #define MAX_NUM_LOC_EXCLUDE 1000
 EXTERN_TXT ExcludeDesc LocExclude[MAX_NUM_LOC_EXCLUDE];
 EXTERN_TXT int NumLocExclude;
-
-/* include arrivals */
-#define MAX_NUM_LOC_INCLUDE 1000
-EXTERN_TXT ExcludeDesc LocInclude[MAX_NUM_LOC_INCLUDE];
-EXTERN_TXT int NumLocInclude;
 
 /* station delays */
 #define WRITE_RESIDUALS 0
@@ -389,8 +355,8 @@ EXTERN_TXT int topo_surface_index; // topo surface index is velmod.h.MAX_SURFACE
 
 
 /* station list */
-int NumStationPhases;
-SourceDesc StationPhaseList[X_MAX_NUM_ARRIVALS];
+int NumStations;
+SourceDesc StationList[X_MAX_NUM_ARRIVALS];
 
 /* fixed origin time parameters */
 EXTERN_TXT int FixOriginTimeFlag;
@@ -424,9 +390,9 @@ EXTERN_TXT ResultTreeNode* resultTreeRoot; /* Octtree likelihood*volume results 
 /* take-off angles */
 EXTERN_TXT int angleMode; /* angle mode - ANGLE_MODE_NO, ANGLE_MODE_YES */
 EXTERN_TXT int iAngleQualityMin; /* minimum quality for angles to be used */
-#define ANGLE_MODE_NO 0
-#define ANGLE_MODE_YES 1
-#define ANGLE_MODE_UNDEF -1
+#define ANGLE_MODE_NO	0
+#define ANGLE_MODE_YES	1
+#define ANGLE_MODE_UNDEF	-1
 
 
 /* otime list */
@@ -481,7 +447,7 @@ StaStatNode *InstallStaStatInTable(int, char*, char*, int, double,
 int FreeStaStatTable(int ntable);
 int WriteStaStatTable(int, FILE *, double, int, double,
         double, double, double, double, double, double, int);
-void UpdateStaStat(int, ArrivalDesc *, int, double, double, double, double);
+void UpdateStaStat(int, ArrivalDesc *, int, double, double, double);
 
 /** end of hashtable routines */
 /*------------------------------------------------------------*/
@@ -502,6 +468,7 @@ int ExtractFilenameInfo(char*, char*);
 int ReadNLLoc_Input(FILE* fp_input, char **param_line_array, int n_param_lines);
 int GetNLLoc_Grid(char*);
 int GetNLLoc_HypOutTypes(char*);
+int GetPhaseID(char*);
 int GetStaWeight(char* line1);
 int GetNLLoc_Gaussian(char*);
 int GetNLLoc_Gaussian2(char*);
@@ -511,30 +478,27 @@ int GetNLLoc_Magnitude(char*);
 int GetNLLoc_Files(char*);
 int GetNLLoc_Method(char*);
 int GetNLLoc_SearchType(char*);
-int GetNLLoc_PdfGrid(char*, int);
 int GetNLLoc_FixOriginTime(char*);
 int GetObservations(FILE*, char*, char*, ArrivalDesc*, int*, int*, int*, int, HypoDesc*, int*, int*, int);
-int GetNextObs(HypoDesc* phypo, FILE*, ArrivalDesc *, char*, int);
+int GetNextObs(FILE*, ArrivalDesc *, char*, int);
 int IsGoodDate(int, int, int);
 int ReadArrivalSheets(int, ArrivalDesc*, double);
 int IsSameArrival(ArrivalDesc *, int, int, char *);
 int IsDuplicateArrival(ArrivalDesc *, int, int, int);
 int FindDuplicateTimeGrid(ArrivalDesc *arrival, int num_arrivals, int ntest);
 
-int WriteHypo71(FILE *, HypoDesc*, ArrivalDesc*, int, char*, int, int);
-int WriteHypoEll(FILE *, HypoDesc*, ArrivalDesc*, int, char*, int, int);
+int WriteHypo71(FILE *, HypoDesc* , ArrivalDesc* , int , char* , int , int );
+int WriteHypoEll(FILE *, HypoDesc* , ArrivalDesc* , int , char* , int , int );
 int WriteHypoInverseArchive(FILE *fpio, HypoDesc *phypo, ArrivalDesc *parrivals, int narrivals,
         char *filename, int writeY2000, int write_arrivals, double arrivalWeightMax);
-int WriteHypoAlberto4(FILE *, HypoDesc*, ArrivalDesc*, int, char*);
+int WriteHypoAlberto4(FILE *, HypoDesc* , ArrivalDesc* , int , char* );
 int WriteHypoFmamp(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, int narrivals, char* filename, int write_header);
-int WriteHypoFmampSearchPosterior(SearchPdfGridDesc *searchPdfGrid, FILE *fpio, HypoDesc* phypo, char* filename, int write_header);
 int OpenSummaryFiles(char *, char *);
 int CloseSummaryFiles();
 
 int GetCompDesc(char*);
 int GetLocAlias(char*);
 int GetLocExclude(char* line1);
-int GetLocInclude(char* line1);
 int GetTimeDelays(char*);
 int GetTimeDelaySurface(char*);
 
@@ -552,8 +516,8 @@ int ConstWeightMatrix(int, ArrivalDesc*, GaussLocParams*);
 int CleanWeightMatrix();
 void CalcCenteredTimesObs(int, ArrivalDesc*, GaussLocParams*, HypoDesc*);
 void CalcCenteredTimesPred(int, ArrivalDesc*, GaussLocParams*);
-double CalcSolutionQuality(double hypo_x, double hypo_y, double hypo_z, OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival, GaussLocParams* gauss_par, int itype,
-        double* pmisfit, double* potime, double* potime_var, double cell_diagonal_time_var, double cell_diagonal, double cell_volume, double* effective_cell_size, double *pot_variance_factor, double *prior);
+double CalcSolutionQuality(OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival, GaussLocParams* gauss_par, int itype,
+        double* pmisfit, double* potime, double* potime_var, double cell_diagonal_time_var, double cell_diagonal, double cell_volume, double* effective_cell_size, double *pot_variance_factor);
 double CalcSolutionQuality_GAU_ANALYTIC(int, ArrivalDesc*, GaussLocParams*, int, double*, double*);
 double CalcSolutionQuality_GAU_TEST(int, ArrivalDesc*, GaussLocParams*, int, double*, double*);
 double CalcSolutionQuality_L1_NORM(int num_arrivals, ArrivalDesc *arrival,
@@ -582,6 +546,7 @@ int StdDateTime(ArrivalDesc*, int, HypoDesc*);
 int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file, char lastfile[FILENAME_MAX], int isec, int *pncount);
 int SaveLocation(HypoDesc* hypo, int ngrid, char* fnobs, char *fnout, int numArrivalsReject,
         char* typename, int isave_phases, GaussLocParams* gauss_par);
+int GenEventScatterGrid(GridDesc*, HypoDesc*, ScatterParams*, char*);
 void InitializeArrivalFields(ArrivalDesc *);
 int isExcluded(char *label, char *phase);
 int EvaluateArrivalAlias(ArrivalDesc *);
@@ -607,6 +572,8 @@ double Calc_ML_HuttonBoore(double amplitude, double dist, double depth, double s
 double Calc_MD_FMAG(double coda_dur, double dist, double depth, double sta_corr,
         double fmag_c1, double fmag_c2, double fmag_c3, double fmag_c4, double fmag_c5);
 
+int addToStationList(SourceDesc *stations, int numStations, ArrivalDesc *arrival, int nArrivals);
+int WriteStationList(FILE*, SourceDesc*, int);
 int setStationDistributionWeights(SourceDesc *stations, int numStations, ArrivalDesc *arrival, int nArrivals);
 
 int getTravelTimes(ArrivalDesc *arrival, int num_arr_loc, double xval, double yval, double zval);

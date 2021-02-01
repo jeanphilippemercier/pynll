@@ -51,9 +51,9 @@
 
 /* defines */
 
-#define MODE_SRCE_TO_STA 0
-#define MODE_STA_TO_SRCE 1
-#define MODE_UNDEF  -1
+#define MODE_SRCE_TO_STA	0
+#define MODE_STA_TO_SRCE	1
+#define MODE_UNDEF		-1
 
 /* globals  */
 char EventStr[MAXLINE], fn_hypo_output[MAXLINE], fn_simulps_output[MAXLINE], fn_invc_output[MAXLINE];
@@ -61,17 +61,12 @@ char fn_gmt_output[MAXLINE];
 char fn_eq_input[MAXLINE], fn_eq_output[MAXLINE];
 int time2eq_mode;
 double VpVsRatio;
-int NumStationPhases;
-//
-// auto set origin time so multiple sources do not overlap in time and have the same hyp filename
-// 20201013 AJL - added
-double otime_EQSRCE = 0.0;
-double otime_EQSRCE_step = 60.0;
+int NumStations;
 
 /* mechanism */
-#define  MECH_NONE   0
-#define  MECH_DOUBLE   1
-#define  MECH_ISOTROPIC  2
+#define  MECH_NONE 		0
+#define  MECH_DOUBLE 		1
+#define  MECH_ISOTROPIC 	2
 int imech;
 char mech_type[11];
 double mech_phi, mech_del, mech_lam;
@@ -95,7 +90,7 @@ int GetTime2EQ_Files(char*);
 int get_vp_vs(char* line1);
 double CalcArrivalTime(FILE*, GridDesc*, SourceDesc*, StationDesc*);
 double AddNoise(double arrival_time, StationDesc* psta);
-int CalcFirstMotion(char *, GridDesc*, SourceDesc*, StationDesc*, int);
+int CalcFirstMotion(char *, GridDesc*, SourceDesc*, StationDesc*);
 int WritePhaseArrival(double, int, FILE*, FILE*, FILE*, FILE*, FILE*, FILE*, SourceDesc*,
         StationDesc*, int);
 int get_mech(char*);
@@ -145,7 +140,7 @@ int main(int argc, char *argv[]) {
     /* set constants */
 
     SetConstants();
-    NumStationPhases = 0;
+    NumStations = 0;
     NumSources = 0;
     imech = MECH_NONE;
     time2eq_mode = MODE_SRCE_TO_STA;
@@ -172,7 +167,7 @@ int main(int argc, char *argv[]) {
     if (message_flag >= 3)
         test_rand_int();
     if (message_flag >= 3)
-        test_normal_dist_deviate();
+        TestGaussDev();
 
 
 
@@ -241,8 +236,6 @@ int main(int argc, char *argv[]) {
                 "EQEVENT:  Label: %s  Loc:  X %.2lf  Y %.2lf  Z %.2lf  OT %.2lf",
                 Event->label, Event->x, Event->y, Event->z, Event->otime);
         fprintf(fp_eq_output, "# %s\n", EventStr);
-        fprintf(fp_eq_output, "PUBLIC_ID  %s\n", Event->label);
-
         // INVCOUCHE
         // T5  864979  177041  230   0.1490
         fprintf(fp_invc_output, "%s  %f %f elevation_toit-%f  %f", Event->label, 1000.0 * Event->x, 1000.0 * Event->y, 1000.0 * Event->z, Event->otime);
@@ -250,7 +243,14 @@ int main(int argc, char *argv[]) {
         /* generate arrival times for each station */
 
         nsta_written = 0;
-        for (nsta = 0; nsta < NumStationPhases; nsta++) {
+        for (nsta = 0; nsta < NumStations; nsta++) {
+
+            // check if active
+            if ((Station + nsta)->prob_active < 1.0) {
+                if (get_rand_double(0.0, 1.0)
+                        > (Station + nsta)->prob_active)
+                    continue;
+            }
 
             // check for S and valid VpVs
             if (strcmp((Station + nsta)->label, last_label) == 0
@@ -312,26 +312,17 @@ int main(int argc, char *argv[]) {
             else
                 nll_putmsg(2, MsgStr_sta);
             ipolarity = 0;
-            if (imech == MECH_DOUBLE) {
-                int isP = strncmp((Station + nsta)->phs[0].label, "P", 1) == 0;
-                ipolarity = CalcFirstMotion(filename_angle, &grid0, Event, Station + nsta, isP);
-                if (!isP) {
-                    // not P, no polarity possible
-                    ipolarity = 0;
-                }
+            if (imech == MECH_DOUBLE &&
+                    strncmp((Station + nsta)->phs[0].label, "P", 1) == 0) {
+                if ((ipolarity = CalcFirstMotion(filename_angle,
+                        &grid0, Event, Station + nsta))
+                        == 0)
+                    /*nll_puterr("ERROR: calculating polarity.")*/;
             } else if (imech == MECH_ISOTROPIC) {
                 ipolarity = 1;
             }
             // AJL 20070731 - bug fix: new function AddNoise treats S with VpVs correctly
             arrival_time = AddNoise(arrival_time, Station + nsta);
-
-            // check if active
-            if ((Station + nsta)->prob_active < 1.0) {
-                if (get_rand_double(0.0, 1.0) > (Station + nsta)->prob_active)
-                    continue;
-            }
-
-
             if ((istat = WritePhaseArrival(arrival_time, ipolarity,
                     fp_eq_output, fp_hypo_output, fp_simulps_output, fp_invc_output,
                     fp_gmt_output, fp_gmt_output_az,
@@ -395,25 +386,18 @@ double AddNoise(double arrival_time, StationDesc* psta) {
 
     /* add noise */
 
-    double error = psta->phs[0].error;
-    if (psta->phs[0].prob_outlier > 0.0) {
-        if (get_rand_double(0.0, 1.0) < psta->phs[0].prob_outlier) {
-            error *= psta->phs[0].outlier_err_factor;
-        }
-    }
-
     if (strcmp(psta->phs[0].error_type, "GAU") == 0)
-        noise = error * normal_dist_deviate();
+        noise = psta->phs[0].error * GaussDev();
     else if (strcmp(psta->phs[0].error_type, "BOX") == 0)
-        noise = get_rand_double(-error, error);
+        noise = get_rand_double(-(psta->phs[0].error), psta->phs[0].error);
     else if (strcmp(psta->phs[0].error_type, "FIX") == 0)
-        noise = error;
+        noise = psta->phs[0].error;
     else if (strcmp(psta->phs[0].error_type, "NONE") == 0)
         noise = 0.0;
     else
         nll_puterr2("ERROR: unrecognized error type:", psta->phs[0].error_type);
 
-    sprintf(MsgStr, "Station %s  Phase %s  Error Type %s  Error %f  ->  Noise %f + ArrivalTime %f = Sum %f", psta->label, psta->phs[0].label, psta->phs[0].error_type, error, noise, arrival_time, noise + arrival_time
+    sprintf(MsgStr, "Station %s  Phase %s  Error Type %s  Error %f  ->  Noise %f + ArrivalTime %f = Sum %f", psta->label, psta->phs[0].label, psta->phs[0].error_type, psta->phs[0].error, noise, arrival_time, noise + arrival_time
             );
     nll_putmsg(2, MsgStr);
 
@@ -423,10 +407,10 @@ double AddNoise(double arrival_time, StationDesc* psta) {
 
 /*** function to calc first motion from angle grid file */
 
-int CalcFirstMotion(char *filename, GridDesc* ptgrid, SourceDesc* pevent, StationDesc* psta, int isP) {
+int CalcFirstMotion(char *filename, GridDesc* ptgrid,
+        SourceDesc* pevent, StationDesc* psta) {
 
-    double yval_grid, azim;
-    double radamp = 0.0;
+    double yval_grid, azim, radamp;
     int ipolarity = 0;
     double ray_azim, ray_dip;
     int ray_qual;
@@ -451,14 +435,11 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid, SourceDesc* pevent, Statio
 
     /* calc radiation amplitude and polarity */
 
-    if (isP) {
-        radamp = calc_rad(ray_dip * cRPD, ray_azim * cRPD, 'P');
-        ipolarity = radamp < 0.0 ? -1 : 1;
-    }
+    radamp = calc_rad(ray_dip * cRPD, ray_azim * cRPD, 'P');
 
-    sprintf(MsgStr, "FM: Sta: %s  Pha: %s  ray_dip %.1lf  ray_azim %.1lf  radamp %.2le  ipol %d\n",
-            psta->label, psta->phs[0].label, ray_dip, ray_azim, radamp, ipolarity);
-    nll_putmsg(2, MsgStr);
+    ipolarity = radamp < 0.0 ? -1 : 1;
+
+    printf("FM: Sta: %s  ray_dip %.1lf  ray_azim %.1lf  radamp %.2le  ipol %d\n", psta->label, ray_dip, ray_azim, radamp, ipolarity);
 
     return (ipolarity);
 
@@ -519,7 +500,7 @@ int WritePhaseArrival(double arrival_time, int ipolarity,
 
     /* write arrival time to NLLoc output file */
 
-    PhaseFormat = FORMAT_PHASE_2; // 20110105 AJL - to allow long station names
+    PhaseFormat = FORMAT_PHASE_2;   // 20110105 AJL - to allow long station names
     if (WriteArrival(fpout, parr, IO_ARRIVAL_OBS) < 0) {
         nll_puterr("ERROR: writing arrival time to disk.\n");
         return (-1);
@@ -728,16 +709,10 @@ int ReadTime2EQ_Input(FILE* fp_input) {
         /* read source params */
 
         if (strcmp(param, "EQSRCE") == 0) {
-            if ((istat = GetNextSource(strchr(line, ' '))) < 0) {
+            if ((istat = GetNextSource(strchr(line, ' '))) < 0)
                 nll_puterr("ERROR: reading source params.");
-            } else {
+            else
                 flag_source = 1;
-                // auto set origin time so multiple sources do not overlap in time and have the same hyp filename
-                // 20201013 AJL - added
-                SourceDesc *srce = Source + NumSources - 1;
-                srce->otime = otime_EQSRCE;
-                otime_EQSRCE += otime_EQSRCE_step;
-            }
         }
 
 
@@ -876,40 +851,35 @@ int GetTime2EQ_Stations(char* in_line) {
 
 
     /* check number of stations */
-    if (NumStationPhases >= MAX_NUM_STATIONS) {
+    if (NumStations >= MAX_NUM_STATIONS) {
         nll_puterr("ERROR: to many stations, ignoring station.");
         return (0);
     }
-    sta_in = Station + NumStationPhases;
-    NumStationPhases++;
+    sta_in = Station + NumStations;
+    NumStations++;
 
 
     /* read source input line */
 
     sta_in->prob_active = 1.0;
-    // 20201015 AJL - added probabilistic data outlier, with probability prob_outlier, phase error is increased by outlier_err_factor
-    sta_in->phs[0].prob_outlier = 0.0;
-    sta_in->phs[0].outlier_err_factor = 1.0;
 
-    istat = sscanf(in_line, "%s %s %s %lf %s %lf %lf %lf %lf",
+    istat = sscanf(in_line, "%s %s %s %lf %s %lf %lf",
             sta_in->label, sta_in->phs[0].label,
             sta_in->phs[0].error_type, &(sta_in->phs[0].error),
             sta_in->phs[0].error_report_type,
-            &(sta_in->phs[0].error_report), &(sta_in->prob_active), &(sta_in->phs[0].prob_outlier), &(sta_in->phs[0].outlier_err_factor));
+            &(sta_in->phs[0].error_report), &(sta_in->prob_active));
 
     sprintf(MsgStr,
-            "STATION:  %d  Name: %s  Phase: %s  ErrorCalc: %s +/- %.2le  ErrorReport: %s +/- %.2le  ProbActive: %.2lf"
-            "  ProbOutlier: %.2lf  OutlierErrorFactor: %.2lf",
-            NumStationPhases - 1, sta_in->label, sta_in->phs[0].label,
+            "STATION:  %d  Name: %s  Phase: %s  ErrorCalc: %s +/- %.2le  ErrorReport: %s +/- %.2le  ProbActive: %.2lf",
+            NumStations - 1, sta_in->label, sta_in->phs[0].label,
             sta_in->phs[0].error_type, sta_in->phs[0].error,
             sta_in->phs[0].error_report_type, sta_in->phs[0].error_report,
-            sta_in->prob_active,
-            sta_in->phs[0].prob_outlier, sta_in->phs[0].outlier_err_factor);
+            sta_in->prob_active);
     nll_putmsg(2, MsgStr);
 
     ierr = 0;
 
-    if (ierr < 0 || (istat != 6 && istat != 7 && istat != 9))
+    if (ierr < 0 || (istat != 6 && istat != 7))
         return (-1);
 
     return (0);

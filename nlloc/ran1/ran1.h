@@ -55,6 +55,12 @@ void test_rand_int();
 
 
 
+/*//////// Numerical Recipies stuff */
+
+double seed_ran1(int iseed);
+double get_ran1();
+double ran1(int* idum);
+
 
 
 /*//////// UNI stuff */

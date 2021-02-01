@@ -31,7 +31,7 @@
 #include <math.h>
 #include <limits.h>
 
-#define MAXFILE 1024
+#define MAXFILE 200
 
 /*#define REAL_MIN min_normal()*/
 #ifndef REAL_MIN
@@ -64,7 +64,7 @@
 #endif
 
 #ifndef MAXLINE_LONG
-#define MAXLINE_LONG 1024
+#define MAXLINE_LONG 4*MAXLINE
 #endif
 
 /* externally defined names */

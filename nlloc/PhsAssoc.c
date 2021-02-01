@@ -83,15 +83,6 @@ int main(int argc, char** argv) {
         nll_puterr("ERROR wrong number of command line arguments.");
         disp_usage(PNAME,
                 "max_residual i_shift_obs_time max_time_shift_res i_swap_bytes i_look_for_sta_grids i_write_all <time_grid_root> <nll_hyp_files...>");
-        printf("Program to associate phase picks with phase codes using the NLLoc maximum likelihood hypocenter and travel time table for each possible phase code\n");
-        printf("max_residual -\t maximum residual (sec) between observed and predicted arrival time to associate\n");
-        printf("i_shift_obs_time -\t 0/1 flag to shift observed time by increments of 60s to reduce residual\n");
-        printf("max_time_shift_res -\t maximum residual (sec) to accept after shifting observed time by increments of 60s\n");
-        printf("i_swap_bytes -\t 0/1 flag to indicate if hi and low bytes of input velocity grid file should be swapped \n");
-        printf("i_look_for_sta_grids -\t 0/1 flag to indicate if station specific time grid files should be used, use only DEFAULT files otherwise or if no station time grids available. \n");
-        printf("i_write_all -\t 0/1 flag to indicate if all location results should be written to disk, event if no phase names or time were changed. \n");
-        printf("<time_grid_root> -\t full or relative path and file root name (no extension) for station/phase travel-time grids \n");
-        printf("<nll_hyp_files...> -\t one or more NLL hyp files (wildcards OK) defining hypocenter and arrival times\n");
         exit(0);
     }
 

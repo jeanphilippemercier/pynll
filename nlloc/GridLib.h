@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2019 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2015 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser Public License as published by
@@ -34,9 +34,9 @@ www.alomax.net
 
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "7.00.10"
-#define PDATE "30Aug2020"
-/*#define PCOPYRIGHT "\nCopyright (C) 1999-2019 Anthony Lomax\n"*/
+#define PVER  "7.00.00"
+#define PDATE "27Oct2017"
+/*#define PCOPYRIGHT "\nCopyright (C) 1999-2017 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
 
@@ -115,7 +115,7 @@ www.alomax.net
 #ifndef MAXLINE
 #define MAXLINE 101
 #endif
-#define MAXLINE_LONG 1024
+#define MAXLINE_LONG 4*MAXLINE
 #define MAXSTRING 21
 
 //#ifndef FILENAME_MAX
@@ -199,10 +199,6 @@ EXTERN_TXT int nll_mode;
 #define GRID_LENGTH  4001  /* distance or length (km) 3D grid */
 
 #define GRID_COULOMB  5000  /* Coulomb */
-
-#define GRID_SSST_TIMECORR 6000 // ssst time corerction in seconds (sign is equivalent to oberved-calculated residual)
-
-
 
 #define ANGLE_MODE_NO 0
 #define ANGLE_MODE_YES 1
@@ -304,8 +300,6 @@ typedef struct {
     char error_type[MAXLINE]; /* error type */
     double error_report; /* error in arrival time  to report*/
     char error_report_type[MAXLINE]; /* error type */
-    double prob_outlier; // probability reading is outlier, multiply error by outlier_err_factor
-    double outlier_err_factor;
 }
 PhaseDesc;
 
@@ -327,7 +321,7 @@ typedef struct {
 }
 SourceDesc;
 
-/* station-phase */
+/* station */
 
 typedef struct {
     char label[ARRIVAL_LABEL_LEN]; /* char label */
@@ -374,7 +368,6 @@ typedef struct {
     char phase[PHASE_LABEL_LEN]; /* char phase id */
     char onset[2]; /* char onset (ie E I) */
     char first_mot[2]; /* char first motion id */
-    double first_mot_quality; // first motion quality weight   // 20200829 AJL - added
     int quality; /* pick quality (ie weight 0 1 2 3 4) */
     int year, month, day; /* observed arrival date */
     int hour, min; /* observed arrival hour/min */
@@ -508,10 +501,6 @@ typedef struct {
  */
 
 typedef struct {
-
-    // public_id
-    // 20190823 AJL - added
-    char public_id[4 * MAXLINE];
     double x, y, z; /* loc (km) */
     int ix, iy, iz; /* loc (grid) */
     double dlat, dlong, depth; /* loc (geographic) */
@@ -571,8 +560,8 @@ typedef struct {
     double tsp_min_max_diff; /* max P-S - min P-S (sec) */
 
     char label[MAXLINE]; /* char label */
-    char fileroot[4 * MAXLINE]; /* fileroot for original location */
-    char comment[4 * MAXLINE]; /* char comment */
+    char fileroot[2 * MAXLINE]; /* fileroot for original location */
+    char comment[2 * MAXLINE]; /* char comment */
     char signature[6 * MAXLINE]; /* char signature/program/date/etc */
     char searchInfo[2 * MAXLINE]; /* char search type dependent info */
 
@@ -692,15 +681,14 @@ EXTERN_TXT ArrivalDesc* Arrival;
 EXTERN_TXT HypoDesc Hypocenter;
 
 /* geographic transformations (lat/long <=> x/y) */
-#define NUM_PROJ_MAX   10
+#define NUM_PROJ_MAX   3
 #define MAP_TRANS_UNDEF  -1
 #define MAP_TRANS_NONE   0
 #define MAP_TRANS_GLOBAL  1
 #define MAP_TRANS_SIMPLE  2
 #define MAP_TRANS_LAMBERT  3
 #define MAP_TRANS_TM     4
-#define MAP_TRANS_AZ_EQUID     5
-#define MAP_TRANS_SDC   6
+#define MAP_TRANS_SDC   5
 EXTERN_TXT char map_trans_type[NUM_PROJ_MAX][MAXLINE]; /* name of projection */
 EXTERN_TXT int map_itype[NUM_PROJ_MAX]; /* int id of projection */
 EXTERN_TXT char MapProjStr[NUM_PROJ_MAX][2 * MAXLINE]; /* string description of proj params */
@@ -735,8 +723,7 @@ EXTERN_TXT int NumQuality2ErrorLevels;
 /* model coordinates */
 #define COORDS_RECT 0
 #define COORDS_LATLON 1
-// int ModelCoordsMode;  // 20200608 AJL - bug fix (e-mail 07/06/2020 03:11 陈俊磊)
-EXTERN_TXT int ModelCoordsMode;
+int ModelCoordsMode;
 
 /* */
 /*------------------------------------------------------------/ */
@@ -786,13 +773,11 @@ void DestroyGridArray(GridDesc*);
 void DuplicateGrid(GridDesc*, GridDesc*, char *);
 int CheckGridArray(GridDesc*, double, double, double, double);
 int SumGrids(GridDesc* pgrid_sum, GridDesc* pgrid_new, FILE* fp_grid_new, double factor);
-int MulConstGrid(GridDesc* pgrid_sum, GridDesc* pgrid_new, FILE* fp_grid_new, double factor);
-int testIdentical(GridDesc* pGrid1, GridDesc* pGrid2);
 int WriteGrid3dBuf(GridDesc*, SourceDesc*, char*, char*);
 int WriteGrid3dHdr(GridDesc*, SourceDesc*, char*, char*);
 int ReadGrid3dBuf(GridDesc*, FILE*);
 int ReadGrid3dHdr(GridDesc*, SourceDesc*, char*, char*);
-int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc* pgrid, char *fname);
+int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc* pgrid);
 int ReadGrid3dBufSheet(GRID_FLOAT_TYPE *, GridDesc*, FILE*, int);
 GRID_FLOAT_TYPE ReadAbsGrid3dValue(FILE*, GridDesc*, double, double,
         double, int);
@@ -802,7 +787,7 @@ int OpenGrid3dFile(char *, FILE **, FILE **, GridDesc*,
 // 20170207 AJL - GridDesc needed for cleaning up cascading grid header data
 //void CloseGrid3dFile(FILE **, FILE **);
 void CloseGrid3dFile(GridDesc* pgrid, FILE **fp_grid, FILE **fp_hdr); // 20170207 AJL - added
-GRID_FLOAT_TYPE* ReadGridFile(GRID_FLOAT_TYPE* values, char *fname, char* file_type, double* xloc, double* yloc, double* zloc, int nvalues, int iSwapBytes, SourceDesc* psrceIn);
+GRID_FLOAT_TYPE* ReadGridFile(GRID_FLOAT_TYPE* values, char *fname, char* file_type, double* xloc, double* yloc, double* zloc, int nvalues, int iSwapBytes);
 GRID_FLOAT_TYPE ReadGrid3dValue(FILE *fpgrid, int ix, int iy, int iz, GridDesc * pgrid, int clean_casc_allocs);
 DOUBLE InterpCubeLagrange(DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE,
         DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE);
@@ -817,8 +802,6 @@ DOUBLE ReadAbsInterpGrid2d(FILE *, GridDesc*,
 int isOnGridBoundary(double, double, double, GridDesc*, double, double, int);
 int IsPointInsideGrid(GridDesc*, double, double, double);
 int IsGridInside(GridDesc*, GridDesc*, int);
-int IsDistStaGridOK(GridDesc* pgrid_3D, SourceDesc* station,
-        double dist_horiz_min, double dist_horiz_max, double xcent, double ycent);
 int IsGrid2DBigEnough(GridDesc*, GridDesc*, SourceDesc*,
         double, double, double, double);
 
@@ -830,8 +813,8 @@ void* AllocateGrid_Cascading(GridDesc* pgrid, int allocate_buffer);
 void FreeGrid_Cascading(GridDesc * pgrid);
 
 /* statistics functions */
-double normal_dist_deviate();
-void test_normal_dist_deviate();
+double GaussDev();
+void TestGaussDev();
 int GenTraditionStats(GridDesc*, Vect3D*, Mtrx3D*, FILE*);
 Vect3D CalcExpectation(GridDesc*, FILE*);
 Mtrx3D CalcCovariance(GridDesc*, Vect3D*, FILE*);
@@ -852,7 +835,6 @@ int ReadHypStatistics(FILE **, char*, Vect3D*, Vect3D*,
         Mtrx3D*, Ellipsoid3D*, ArrivalDesc*, int*);
 int ReadFocalMech(FILE **pfpio, char* fnroot_in, FocalMech* pfocalMech,
         ArrivalDesc* parrivals, int *pnarrivals);
-int ReadFirstMotionArrivals(FILE **pfpio, char* fnroot_in, ArrivalDesc* parrivals, int *pnarrivals);
 void Qual2Err(ArrivalDesc *);
 int Err2Qual(ArrivalDesc *);
 int GetQuality2Err(char*);
@@ -870,7 +852,6 @@ double GetEpiDist(SourceDesc*, double, double);
 double GetEpiAzim(SourceDesc*, double, double);
 double GetEpiDistSta(StationDesc*, double, double);
 double GetEpiAzimSta(StationDesc*, double, double);
-double Dist2D(double, double, double, double);
 double Dist3D(double, double, double, double, double, double);
 double calcAveInterStationDistance(SourceDesc *stations, int numStations);
 int stationLocationIsKnown(double x, double y);
@@ -941,22 +922,6 @@ int WriteHypoDDInitHypo(FILE *fp_out, HypoDesc *phypo);
 int WriteHypoDDXCorrDiff(FILE *fp_out, int num_arrivals, ArrivalDesc *arrival, HypoDesc *phypo);
 int WriteDiffArrival(FILE* fpio, HypoDesc* hypos, ArrivalDesc* parr, int iWriteType);
 
-
-// 20190509 AJL - following moved here from NLLocLib.h
-// scatter parameters
-typedef struct {
-    int npts; /* number of scatter points */
-}
-ScatterParams;
-int GenEventScatterGrid(GridDesc*, HypoDesc*, ScatterParams*, char*);
-
-double IntegrateGrid(GridDesc* pgrid, int flag_normalize);
-
-
-// 20200122 AJL - following function moved here from NLLocLib.h
-int addToStationList(SourceDesc *stations, int numStations, ArrivalDesc *arrival, int nArrivals, int iuse_phaseid_in_label);
-int WriteStationList(FILE*, SourceDesc*, int);
-int GetPhaseID(char*);
 
 /* */
 /*------------------------------------------------------------/ */

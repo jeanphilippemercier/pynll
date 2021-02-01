@@ -101,7 +101,7 @@ int NLLoc
     int maxArrExceeded = 0;
     int n_file_root_count = 1;
     char fn_root_out[FILENAME_MAX], fname[FILENAME_MAX], fn_root_out_last[FILENAME_MAX];
-    char sys_command[2*FILENAME_MAX];
+    char sys_command[MAXLINE_LONG];
     char *chr;
     FILE *fp_obs = NULL, *fpio;
 
@@ -124,7 +124,7 @@ int NLLoc
     NumEvents = NumEventsLocated = NumLocationsCompleted = 0;
     NumCompDesc = 0;
     NumLocAlias = 0;
-    NumLocExclude = NumLocInclude = 0;
+    NumLocExclude = 0;
     NumTimeDelays = 0;
     NumPhaseID = 0;
     DistStaGridMax = 0.0;
@@ -144,10 +144,6 @@ int NLLoc
     iRejectDuplicateArrivals = 1;
     strcpy(fn_root_out_last, "");
     ;
-
-    // Search prior or posteriour PDF
-    iUseSearchPrior = 0;
-    iUseSearchPosterior = 0;
 
     // Arrival prior weighting  (NLL_FORMAT_VER_2)
     iUseArrivalPriorWeights = 1;
@@ -169,7 +165,7 @@ int NLLoc
 
     // GLOBAL
     NumSources = 0;
-    NumStationPhases = 0;
+    NumStations = 0;
 
     // Gauss2
     iUseGauss2 = 0;
@@ -358,7 +354,7 @@ int NLLoc
             }
             /* extract info from filename */
             if ((istat = ExtractFilenameInfo(fn_loc_obs[nObsFile], ftype_obs)) < 0)
-                nll_puterr("WARNING: error extracting information from filename.");
+                nll_puterr("WARNING: error extractng information from filename.");
         }
 
 
@@ -381,17 +377,6 @@ int NLLoc
                 nll_putmsg(1, MsgStr);
             }
 
-            // initialize hypo fields that may be modified when reading observations
-            Hypocenter.amp_mag = MAGNITUDE_NULL;
-            Hypocenter.num_amp_mag = 0;
-            Hypocenter.dur_mag = MAGNITUDE_NULL;
-            Hypocenter.num_dur_mag = 0;
-            strcpy(Hypocenter.public_id, "None");
-            Hypocenter.focMech.dipDir = 0.0;
-            Hypocenter.focMech.dipAng = 0.0;
-            Hypocenter.focMech.rake = 0.0;
-            Hypocenter.focMech.misfit = 0.0;
-            Hypocenter.focMech.nObs = -1;
 
             /* read next set of observations */
 
@@ -467,9 +452,9 @@ int NLLoc
             // station distribution weighting
             if (iSetStationDistributionWeights || iSaveNLLocSum || octtreeParams.use_stations_density) {
                 //printf(">>>>>>>>>>> NumStations %d, NumArrivals %d, numArrivalsReject %d\n", NumStations, NumArrivals, numArrivalsReject);
-                NumStationPhases = addToStationList(StationPhaseList, NumStationPhases, Arrival, NumArrivalsRead, 0);
+                NumStations = addToStationList(StationList, NumStations, Arrival, NumArrivalsRead);
                 if (iSetStationDistributionWeights)
-                    setStationDistributionWeights(StationPhaseList, NumStationPhases, Arrival, NumArrivals);
+                    setStationDistributionWeights(StationList, NumStations, Arrival, NumArrivals);
 
             }
 
@@ -659,7 +644,7 @@ cleanup:
                 } else {
                     NumFilesOpen++;
                 }
-                WriteStationList(fpio, StationPhaseList, NumStationPhases);
+                WriteStationList(fpio, StationList, NumStations);
                 fclose(fpio);
                 // save to last
                 sprintf(sys_command, "cp %s %slast.stations", fname, f_outpath);
