@@ -96,7 +96,7 @@ struct GrStation {
 };
 EXTERN_TXT int gr_num_sta;		/* number of stations read */
 
-#define MAX_NUM_STA 100
+#define MAX_NUM_STA 1000
 EXTERN_TXT struct GrStation sta_array[MAX_NUM_STA];
 
 
@@ -134,7 +134,7 @@ struct GrLine {
 
 EXTERN_TXT int gr_num_line;		/* number of lines read */
 
-#define MAX_NUM_LINE 100
+#define MAX_NUM_LINE 500
 EXTERN_TXT struct GrLine line_array[MAX_NUM_LINE];
 
 	/* map line files */
