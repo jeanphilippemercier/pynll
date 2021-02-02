@@ -36,7 +36,7 @@
 
 
 #ifndef MAXLINE
-#define MAXLINE 101
+#define MAXLINE 501
 #endif
 
 #ifndef VERY_SMALL_DOUBLE

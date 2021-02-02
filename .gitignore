@@ -53,19 +53,6 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-### CMake template
-CMakeLists.txt.user
-CMakeCache.txt
-CMakeFiles
-CMakeScripts
-Testing
-Makefile
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-_deps
-
 ### Example user template template
 ### Example user template
 
@@ -74,7 +61,7 @@ _deps
 *.iml
 out
 gen
-dist 
+dist
 ### C++ template
 # Prerequisites
 *.d
@@ -108,4 +95,8 @@ dist
 *.exe
 *.out
 *.app
+
+# Python
+__pycache__
+*egg*
 

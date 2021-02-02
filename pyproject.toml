@@ -8,8 +8,10 @@ build = "build.py"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-uquake = "^0.1.0"
 setuptools_cpp = "^0.1.0"
+uquake = "^0.1.0"
+
+[tool.poetry.scripts]
 
 [tool.poetry.dev-dependencies]
 

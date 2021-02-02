@@ -113,7 +113,7 @@ www.alomax.net
 #define OUT_LEVEL_2 fp_null
 
 #ifndef MAXLINE
-#define MAXLINE 101
+#define MAXLINE 501
 #endif
 #define MAXLINE_LONG 4*MAXLINE
 #define MAXSTRING 21

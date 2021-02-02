@@ -60,7 +60,7 @@
 #endif
 
 #ifndef MAXLINE
-#define MAXLINE 101
+#define MAXLINE 501
 #endif
 
 #ifndef MAXLINE_LONG

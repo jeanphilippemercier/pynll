@@ -56,6 +56,11 @@ valid_grid_units = (
 )
 
 
+def test(ranou):
+    print(ranou)
+    return
+
+
 class Grid3D(object):
     """
     base 3D rectilinear grid object
