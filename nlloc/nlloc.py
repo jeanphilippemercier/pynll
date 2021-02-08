@@ -2,23 +2,23 @@
 # ------------------------------------------------------------------
 # Filename: core.py
 #  Purpose: module to interact with the NLLoc
-#   Author: microquake development team
-#    Email: devs@microquake.org
+#   Author: uquake development team
+#    Email: devs@uquake.org
 #
-# Copyright (C) 2016 microquake development team
+# Copyright (C) 2016 uquake development team
 # --------------------------------------------------------------------
 """
 module to interact with the NLLoc
 
 :copyright:
-    microquake development team (devs@microquake.org)
+    uquake development team (devs@uquake.org)
 :license:
     GNU Lesser General Public License, Version 3
     (http://www.gnu.org/copyleft/lesser.html)
 """
 
 
-# from microquake.core.nlloc.core import *
+# from uquake.core.nlloc.core import *
 
 import os
 import shutil
@@ -30,12 +30,12 @@ from time import time
 
 import numpy as np
 import obspy.core.event
-from loguru import logger
+from uquake.logging import logger
 from obspy import UTCDateTime
 from obspy.core import AttribDict
 
-from microquake.core.data.grid import read_grid
-from microquake.core.event import Arrival, Catalog, Origin
+from uquake.core.grid import read_grid
+from uquake.core.event import Arrival, Catalog, Origin
 
 
 def read_nlloc_hypocenter_file(filename, picks=None,
@@ -46,7 +46,7 @@ def read_nlloc_hypocenter_file(filename, picks=None,
     :param filename: path to NLLoc hypocenter filename
     :type filename: str
     :return: seismic catalogue
-    :rtype: ~microquake.core.event.Catalog
+    :rtype: ~uquake.core.event.Catalog
     """
     cat = Catalog()
 
@@ -86,7 +86,7 @@ def read_nlloc_hypocenter_file(filename, picks=None,
         method = '%s' % ("NLLOC")
 
         creation_info = obspy.core.event.CreationInfo(
-            author='microquake', creation_time=UTCDateTime.now())
+            author='uquake', creation_time=UTCDateTime.now())
 
         origin = Origin(x=hyp_x, y=hyp_y, z=hyp_z, time=tme,
                         evaluation_mode=evaluation_mode,
@@ -248,11 +248,11 @@ def calculate_uncertainty(event, base_directory, base_name, perturbation=5,
                           pick_uncertainty=1e-3):
     """
     :param event: event
-    :type event: microquake.core.event.Event
+    :type event: uquake.core.event.Event
     :param base_directory: base directory
     :param base_name: base name for grids
     :param perturbation:
-    :return: microquake.core.event.Event
+    :return: uquake.core.event.Event
     """
 
     if hasattr(event.preferred_origin(), 'scatter'):
@@ -385,7 +385,7 @@ def _read_nll_header_file(file_name):
     read NLLoc header file
     :param file_name: path to the header file
     :type file_name: str
-    :rtype: ~microquake.core.AttribDict
+    :rtype: ~uquake.core.AttribDict
     """
     dict_out = AttribDict()
     with open(file_name, 'r') as fin:
@@ -420,13 +420,13 @@ def read_NLL_grid(base_name):
     :param base_name: path to the file excluding the extension. The .hdr and
     .buf extensions are added automatically
     :type base_name: str
-    :rtype: ~microquake.core.data.grid.GridDataa
+    :rtype: ~uquake.core.data.grid.GridDataa
 
     .. NOTE:
         The function detects the presence of either the .buf or .hdr extensions
     """
 
-    from microquake.core import GridData
+    from uquake.core import GridData
     # Testing the presence of the .buf or .hdr extension at the end of
     # base_name
 
@@ -611,7 +611,7 @@ class NLL(object):
         :type project_code: str
         :param event: and event containing picks and an origin with arrivals
         referring to the picks
-        :type event: ~microquake.core.event.Event
+        :type event: ~uquake.core.event.Event
         :param base_folder: the name of the NLL folder
         :type base_folder: str
         """
@@ -852,7 +852,7 @@ class NLL(object):
         """
         calculate and save take off angle grid
         """
-        from microquake.core.simul.eik import angles
+        from uquake.core.simul.eik import angles
         # reading the travel time grid
         ifile = time_file
         ttg = read_grid(ifile, format='NLLOC')
@@ -869,7 +869,7 @@ class NLL(object):
         Returns:
 
         """
-        from microquake.core.simul.eik import ray_tracer
+        from uquake.core.simul.eik import ray_tracer
         time_files = glob('%s/time/*time*.hdr' % self.base_folder)
 
         ttg = read_grid(time_files[0], format='NLLOC')
@@ -969,13 +969,13 @@ class NLL(object):
 
     def gen_observations_from_event(self, event):
         """
-        Create NLLoc compatible observation file from an microquake event
+        Create NLLoc compatible observation file from an uquake event
         catalog file.
         input:
 
         :param event: event containing a preferred origin with arrivals
         referring to picks
-        :type event: ~microquake.core.event.Event
+        :type event: ~uquake.core.event.Event
         """
 
         fname = 'gen_observations_from_event'
@@ -1020,7 +1020,7 @@ class NLL(object):
         run
         :type hypfile: str
         :param event: an event object with picks
-        :type event: microquake.core.Event.event
+        :type event: uquake.core.Event.event
         :param evaluation_mode: evaluation mode
         :type evaluation_mode: str
         :param evaluation_status: evaluation status
@@ -1028,9 +1028,9 @@ class NLL(object):
         :param use_ray_tracer: if true use ray tracer to measure
         event-station distance (default: True)
         :type use_ray_tracer: bool
-        :rtype: ~microquake.core.event.Catalog
+        :rtype: ~uquake.core.event.Catalog
         """
-        from microquake.core.simul.eik import ray_tracer
+        from uquake.core.simul.eik import ray_tracer
         from time import time
 
         origin = read_nlloc_hypocenter_file(hypfile, event.picks,
@@ -1206,7 +1206,7 @@ GT_PLFD  1.0e-3  0
 
 LOCSIG Microquake package
 
-LOCCOM created automatically by the microquake package
+LOCCOM created automatically by the uquake package
 
 LOCFILES <BASEFOLDER>/<WORKERFOLDER>/obs/<MODELNAME>.obs NLLOC_OBS <BASEFOLDER>/time/<MODELNAME>  <BASEFOLDER>/<WORKERFOLDER>/loc/<MODELNAME>
 
