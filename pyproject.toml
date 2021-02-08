@@ -1,15 +1,18 @@
 [tool.poetry]
-name = "pynll"
-version = "0.1.0"
+name = "nlloc"
+version = "0.2.0"
 description = "wrapper around A. Lomax NLLoc"
 authors = ["jpmercier <jpmercier01@gmail.com>"]
 license = "GNU GENERAL PUBLIC LICENSE Version 3"
-build = "build.py"
 
 [tool.poetry.dependencies]
 python = "^3.8"
 setuptools_cpp = "^0.1.0"
-uquake = "^0.1.0"
+Cython = "^0.29.21"
+ipython = "^7.20.0"
+pytest = "^6.2.2"
+uquake = "^0.2.1"
+dvc = "^1.11.15"
 
 [tool.poetry.scripts]
 
