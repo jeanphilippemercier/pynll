@@ -20,6 +20,8 @@ import numpy as np
 from uquake.core.grid import Grid
 from uquake.core.grid import read_grid
 from pathlib import Path
+from glob import glob
+from uuid import uuid4
 
 
 valid_phases = ('P', 'S')
@@ -82,6 +84,9 @@ class NLLocGrid(Grid):
                 raise ValueError('the seed_label must be set for TIME '
                                  'and ANGLE grids')
 
+        self.seed = seed
+        self.seed_label = seed_label
+
         if grid_type.upper() in valid_grid_types:
             self.grid_type = grid_type.upper()
         else:
@@ -113,16 +118,15 @@ class NLLocGrid(Grid):
             raise ValueError(msg)
 
     @classmethod
-    def from_file(cls, base_name, path='.', float_type='FLOAT'):
+    def from_file(cls, base_name, path='.', float_type='FLOAT', phase='P'):
         """
         read two parts NLLoc files
         :param base_name:
         :param path: location of grid files
         :param float_type: float type as defined in NLLoc grid documentation
         """
-        header_file = Path(path) / base_name
-        base_name += '.buf'
-        with open(base_name, 'r') as in_file:
+        header_file = Path(path) / f'{base_name}.hdr'
+        with open(header_file, 'r') as in_file:
             line = in_file.readline()
             line = line.split()
             shape = tuple([int(line[0]), int(line[1]), int(line[2])])
@@ -144,14 +148,15 @@ class NLLocGrid(Grid):
                         float(line[2]) * 1000,
                         float(line[3]) * 1000)
             else:
-                label = None
+                seed_label = None
                 seed = None
 
+        buf_file = Path(path) / f'{base_name}.buf'
         if float_type == 'FLOAT':
-            data = np.fromfile(Path(path) / (base_name + '.buf'),
+            data = np.fromfile(buf_file,
                                dtype=np.float32)
         elif float_type == 'DOUBLE':
-            data = np.fromfile(Path(path) / (base_name + '.buf'),
+            data = np.fromfile(buf_file,
                                dtype=np.float64)
         else:
             msg = f'float_type = {float_type} is not valid\n' \
@@ -163,13 +168,28 @@ class NLLocGrid(Grid):
 
         data = data.reshape(shape)
 
-        if 'P' in base_name:
+        if '.P.' in base_name:
             phase = 'P'
         else:
             phase = 'S'
 
-        return cls.__init__(base_name, data, origin, spacing, 'P', seed=seed,
-                            seed_label=seed_label, grid_type=grid_type)
+        # reading the model id file
+        mid_file = Path(path) / f'{base_name}.mid'
+        if mid_file.exists():
+            with open(mid_file, 'r') as mf:
+                model_id = mf.readline().strip()
+
+        else:
+            model_id = str(uuid4())
+
+            # (self, base_name, data_or_dims, origin, spacing, phase,
+            #  seed=None, seed_label=None, value=0,
+            #  grid_type='VELOCITY_METERS', grid_units='METER',
+            #  float_type="FLOAT", model_id=None):
+
+        return cls(base_name, data, origin, spacing, phase, seed=seed,
+                   seed_label=seed_label, grid_type=grid_type,
+                   model_id=model_id)
 
     def _write_grid_data(self, path='.'):
 
@@ -191,15 +211,16 @@ class NLLocGrid(Grid):
         line1 = f'{self.shape[0]:d} {self.shape[1]:d} {self.shape[1]:d}  ' \
                 f'{origin[0]:f} {origin[1]:f} {origin[2]:f}  ' \
                 f'{spacing[0]:f} {spacing[1]:f} {spacing[2]:f}  ' \
-                f'{self.grid_type}'
+                f'{self.grid_type}\n'
 
         with open(Path(path) / (self.base_name + '.hdr'), 'w') as out_file:
             out_file.write(line1)
 
-            if self.grid_units == 'METER':
-                seed = self.seed / 1000
-
             if self.grid_type in ['TIME', 'ANGLE']:
+
+                if self.grid_units == 'METER':
+                    seed = self.seed / 1000
+
                 line2 = u"%s %f %f %f\n" % (self.seed_label,
                                             seed[0], seed[1], seed[2])
                 out_file.write(line2)
@@ -210,7 +231,7 @@ class NLLocGrid(Grid):
 
     def _write_grid_model_id(self, path='.'):
         with open(Path(path) / (self.base_name + '.mid'), 'w') as out_file:
-            line = f'model id: {self.model_id}'
+            out_file.write(f'{self.model_id}')
         return True
 
     def write(self, path='.'):
