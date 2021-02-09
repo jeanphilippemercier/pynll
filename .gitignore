@@ -10,6 +10,7 @@
 *.elf
 *.buf
 *.hdr
+*.mid
 
 # Linker output
 *.ilk
