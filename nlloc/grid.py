@@ -22,6 +22,7 @@ from uquake.core.grid import read_grid
 from pathlib import Path
 from glob import glob
 from uuid import uuid4
+import matplotlib.pyplot as plt
 
 
 valid_phases = ('P', 'S')
@@ -53,6 +54,9 @@ valid_grid_units = (
     'METER',
     'KILOMETER'
 )
+
+__velocity_grid_location__ = Path('model')
+__time_grid_location__ = Path('time')
 
 
 class NLLocGrid(Grid):
@@ -243,7 +247,8 @@ class NLLocGrid(Grid):
             self.base_name = self.base_name[:-4]
 
         # if (grid_type == 'VELOCITY') and (velocity_to_slow_len):
-        #     tmp_data = spacing / data  # need this to be in SLOW_LEN format (s/km2)
+        #     tmp_data = spacing / data  # need this to be in SLOW_LEN format
+        #     (s/km2)
         #     grid_type = 'SLOW_LEN'
         # else:
         #     tmp_data = data
@@ -261,4 +266,193 @@ class NLLocGrid(Grid):
     @property
     def sensor(self):
         return self.seed_label
+
+
+class ModelLayer:
+    """
+    1D model varying in Z
+    """
+
+    def __init__(self, z_top, value_top):
+        """
+        :param z_top: Top of the layer z coordinates
+        :param value_top: Value at the top of the layer
+        """
+        self.z_top = z_top
+        self.value_top = value_top
+
+
+class LayeredModel:
+
+    __valid_grid_types__ = ['Vp', 'Vs', 'rho']
+
+    def __init__(self, model_id=None, velocity_model_layers=[],
+                 grid_type='Vp', units='METER'):
+        """
+        Initialize
+        :param model_id: model id, if not set the model ID is set using UUID
+        :param velocity_model_layers: a list of VelocityModelLayer
+        :param grid_type
+        """
+        self.layers = velocity_model_layers
+        self.grid_type = grid_type
+
+        if units not in valid_grid_units:
+            raise ValueError('units are not valid')
+
+        self.units = units
+
+        if model_id is None:
+            model_id = str(uuid4())
+
+        if grid_type not in self.__valid_grid_types__:
+            msg = f'grid_type is not a valid grid type\n' \
+                  f'valid grid types are: \n'
+            for gt in self.__valid_grid_types__:
+                msg + f'{gt}\n'
+
+            raise ValueError(msg)
+
+        self.model_id = model_id
+
+    def add_layer(self, layer):
+        """
+        Add a layer to the model. The layers must be added in sequence from the
+        top to the bottom
+        :param layer: a LayeredModel object
+        :return: None
+        """
+        if not (type(layer) is ModelLayer):
+            raise TypeError('layer must be a VelocityModelLayer object')
+
+        self.layers.append(layer)
+
+    def generate_3d_grid(self, dims, origin, spacing, float_type='FLOAT'):
+        pass
+
+    def gen_1d_model(self, z_min, z_max, spacing):
+        # sort the layers to ensure the layers are properly ordered
+        z = []
+        v = []
+        for layer in self.layers:
+            z.append(layer.z_top)
+            v.append(layer.value_top)
+
+        if np.max(z) < z_max:
+            i_z_max = np.argmax(z)
+            v_z_max = v[i_z_max]
+
+            z.append(z_max)
+            v.append(v_z_max)
+
+        if np.min(z) > z_min:
+            i_z_min = np.argmin(z)
+            v_z_min = v[i_z_min]
+
+            z.append(z_min)
+            v.append(v_z_min)
+
+        i_sort = np.argsort(z)
+
+        z = np.array(z)
+        v = np.array(v)
+
+        z = z[i_sort]
+        v = v[i_sort]
+
+        z_interp = np.arange(z_min, z_max, spacing)
+        v_interp = np.interp(z_interp, z, v)
+
+        return z_interp, v_interp
+
+    def gen_3d_grid(self, dims, origin, spacing):
+        model_grid_3d = ModelGrid3D.from_layered_model(self, dims, origin,
+                                                       spacing)
+        return model_grid_3d
+
+    def plot(self, z_min, z_max, spacing, *args, **kwargs):
+        """
+        Plot the 1D velocity model
+        :param z_min: lower limit of the model
+        :param z_max: upper limit of the model
+        :param spacing: plotting resolution in z
+        :return: matplotlib axis
+        """
+
+        z_interp, v_interp = self.gen_1d_model(z_min, z_max, spacing)
+
+        if self.grid_type == 'Vp':
+            x_label = 'P-wave velocity'
+        elif self.grid_type == 'Vs':
+            x_label = 's-wave velocity'
+        elif self.grid_type == 'rho':
+            x_label = 'density'
+
+        if self.units == 'METER':
+            units = 'm'
+        else:
+            units = 'km'
+
+        y_label = f'z [{units}]'
+        ax = plt.axes()
+        ax.plot(v_interp, z_interp, *args, **kwargs)
+        plt.xlabel(x_label)
+        plt.ylabel(y_label)
+
+        ax.set_aspect(2)
+
+        plt.tight_layout()
+
+        return ax
+
+
+class ModelGrid3D(NLLocGrid):
+
+    def __init__(self, code, data_or_dims, origin, spacing,
+                 phase='P', path='.', value=0, float_type='FLOAT',
+                 model_id=None):
+        self.code = code
+        self.path = path
+        base_name = f'{code}.{phase.upper()}.mod'
+        self.layers = layers
+        super().__init__(base_name, data_or_dims, origin, spacing, phase,
+                 seed=None, seed_label=None, value=value,
+                 grid_type='VELOCITY_METERS', grid_units='METER',
+                 float_type=float_type, model_id=model_id)
+
+    @classmethod
+    def from_layered_model(cls, layered_model, code, dims, origin,
+                           spacing):
+        """
+        Create a velocity model from a VelocityLayers object
+        :param layers: A LayeredModel Object
+        :return: None
+        """
+
+        z_min = origin[-1]
+        z_max = z_min + spacing[-1] * dims[-1]
+
+        z_interp, v_interp = layered_model.gen_1d_model(z_min, z_max, spacing)
+
+        data = np.zeros(dims)
+
+        for i, v in enumerate(v_interp):
+            data[:, :, i] = v_interp[i]
+
+    def gen_derivative_grids(self, time=True, angle=True, take_off_angle=True):
+        """
+        Generate the travel-time and
+        :param time:
+        :param angle:
+        :param take_off_angle:
+        :return:
+        """
+        pass
+
+
+
+
+
+    def add_layer(self):
+        pass
 
