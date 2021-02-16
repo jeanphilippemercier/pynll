@@ -1162,7 +1162,7 @@ setuptools = "*"
 test = ["zope.testing"]
 
 [metadata]
-content-hash = "1da788c4c0989a85a5008b65ca88bca9883dc47f060af66abe44a5499fa41574"
+content-hash = "e4196a7056cef723d2ee42b61f8649dd4cbcccd3e31642e17f0c2ff7b7a6fb44"
 python-versions = "^3.8"
 
 [metadata.files]
