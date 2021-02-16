@@ -47,9 +47,10 @@ def test_read_nlloc_grid():
 
 def test_layered_model():
 
-    from nlloc.grid import (ModelLayer, LayeredModel)
+    from nlloc.grid import (ModelLayer, LayeredVelocityModel)
 
     # The origin is the lower left corner
+    project_code = 'test'
     origin = [650200, 4766170, -500]
     dimensions = [100, 101, 68]
     spacing = [25, 25, 25]
@@ -58,7 +59,7 @@ def test_layered_model():
     vp_z = [4533, 5337, 5836, 5836]
     vs_z = [2306, 2885, 3524, 3524]
 
-    layered_model = LayeredModel()
+    layered_model = LayeredVelocityModel(project_code)
     for (z_, vp) in zip(z, vp_z):
         layer = ModelLayer(z_, vp)
         layered_model.add_layer(layer)
@@ -68,7 +69,7 @@ def test_layered_model():
     z_interp, v_interp = layered_model.gen_1d_model(z_bottom, z_top,
                                                     spacing[2])
 
-    print(z_interp, v_interp)
+    grid_3d = layered_model.gen_3d_grid(dimensions, origin, spacing)
 
     assert True
 
