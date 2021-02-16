@@ -38,6 +38,20 @@ from uquake.core.grid import read_grid
 from uquake.core.event import Arrival, Catalog, Origin
 
 
+control_section = {'verbosity_level': 0}
+
+class CtrlFile:
+    def __init__(self, verbosity_level=0, seed=1000, phases=[], ):
+
+ctrl_file_header_template = """
+CONTROL {verbosity} {seed}
+
+TRANS NONE  # works only for cartesian grids
+
+VGOUT {velocity_output_dir}
+"""
+
+
 def read_nlloc_hypocenter_file(filename, picks=None,
                                evaluation_mode='automatic',
                                evaluation_status='preliminary'):
