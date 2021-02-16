@@ -59,6 +59,45 @@ __velocity_grid_location__ = Path('model')
 __time_grid_location__ = Path('time')
 
 
+def validate_phase(phase):
+    if phase not in valid_phases:
+        msg = f'phase should be one of the following valid phases:\n'
+        for valid_phase in valid_phases:
+            msg += f'{valid_phase}\n'
+        raise ValueError(msg)
+    return True
+
+def validate_grid_type(grid_type):
+    if grid_type.upper() not in valid_grid_types:
+        msg = f'grid_type = {grid_type} is not valid\n' \
+              f'grid_type should be one of the following valid grid ' \
+              f'types:\n'
+        for valid_grid_type in valid_grid_types:
+            msg += f'{valid_grid_type}\n'
+        raise ValueError(msg)
+    return True
+
+def validate_grid_units(grid_units):
+    if grid_units.upper() not in valid_grid_units:
+        msg = f'grid_units = {grid_units} is not valid\n' \
+              f'grid_units should be one of the following valid grid ' \
+              f'units:\n'
+        for valid_grid_unit in valid_grid_units:
+            msg += f'{valid_grid_unit}\n'
+        raise ValueError(msg)
+    return True
+
+def validate_float_type(float_type):
+    if float_type.upper() not in valid_float_types.keys():
+        msg = f'float_type = {float_type} is not valid\n' \
+              f'float_type should be one of the following valid float ' \
+              f'types:\n'
+        for valid_float_type in valid_float_types:
+            msg += f'{valid_float_type}\n'
+        raise ValueError(msg)
+    return True
+
+
 class NLLocGrid(Grid):
     """
     base 3D rectilinear grid object
@@ -72,13 +111,11 @@ class NLLocGrid(Grid):
 
         self.base_name = base_name
 
-        if phase in valid_phases:
-            self.phase = phase
-        else:
-            msg = f'phase should be one of the following valid phases:\n'
-            for valid_phase in valid_phases:
-                msg += f'{valid_phase}\n'
-            raise ValueError(msg)
+        if validate_phase(phase):
+            self.phase = phase.upper()
+
+        if validate_grid_type(grid_type):
+            self.grid_type = grid_type.upper()
 
         if grid_type.upper() in ['TIME', 'TIME2D', 'ANGLE', 'ANGLE2D']:
             if not seed:
@@ -91,35 +128,11 @@ class NLLocGrid(Grid):
         self.seed = seed
         self.seed_label = seed_label
 
-        if grid_type.upper() in valid_grid_types:
-            self.grid_type = grid_type.upper()
-        else:
-            msg = f'grid_type = {grid_type} is not valid\n' \
-                  f'grid_type should be one of the following valid grid ' \
-                  f'types:\n'
-            for valid_grid_type in valid_grid_types:
-                msg += f'{valid_grid_type}\n'
-            raise ValueError(msg)
-
-        if grid_units.upper() in valid_grid_units:
+        if validate_grid_units(grid_units):
             self.grid_units = grid_units.upper()
-        else:
-            msg = f'grid_units = {grid_units} is not valid\n' \
-                  f'grid_units should be one of the following valid grid ' \
-                  f'units:\n'
-            for valid_grid_unit in valid_grid_units:
-                msg += f'{valid_grid_unit}\n'
-            raise ValueError(msg)
 
-        if float_type.upper() in valid_float_types.keys():
-            self.float_type = float_type
-        else:
-            msg = f'float_type = {float_type} is not valid\n' \
-                  f'float_type should be one of the following valid float ' \
-                  f'types:\n'
-            for valid_float_type in valid_float_types:
-                msg += f'{valid_float_type}\n'
-            raise ValueError(msg)
+        if validate_float_type(float_type):
+            self.float_type = float_type.upper()
 
     @classmethod
     def from_file(cls, base_name, path='.', float_type='FLOAT', phase='P'):
@@ -282,36 +295,32 @@ class ModelLayer:
         self.value_top = value_top
 
 
-class LayeredModel:
+class LayeredVelocityModel:
 
-    __valid_grid_types__ = ['Vp', 'Vs', 'rho']
-
-    def __init__(self, model_id=None, velocity_model_layers=[],
-                 grid_type='Vp', units='METER'):
+    def __init__(self, project_code, model_id=None, velocity_model_layers=[],
+                 phase='P', grid_units='METER', float_type='FLOAT'):
         """
         Initialize
         :param model_id: model id, if not set the model ID is set using UUID
         :param velocity_model_layers: a list of VelocityModelLayer
-        :param grid_type
+        :param phase:
         """
+        self.project_code = project_code
         self.layers = velocity_model_layers
-        self.grid_type = grid_type
 
-        if units not in valid_grid_units:
-            raise ValueError('units are not valid')
+        if validate_phase(phase):
+            self.phase = phase.upper()
 
-        self.units = units
+        if validate_grid_units(grid_units):
+            self.grid_units = grid_units.upper()
+
+        if validate_float_type(float_type):
+            self.float_type = float_type.upper()
+
+        self.grid_type = 'VELOCITY'
 
         if model_id is None:
             model_id = str(uuid4())
-
-        if grid_type not in self.__valid_grid_types__:
-            msg = f'grid_type is not a valid grid type\n' \
-                  f'valid grid types are: \n'
-            for gt in self.__valid_grid_types__:
-                msg + f'{gt}\n'
-
-            raise ValueError(msg)
 
         self.model_id = model_id
 
@@ -326,9 +335,6 @@ class LayeredModel:
             raise TypeError('layer must be a VelocityModelLayer object')
 
         self.layers.append(layer)
-
-    def generate_3d_grid(self, dims, origin, spacing, float_type='FLOAT'):
-        pass
 
     def gen_1d_model(self, z_min, z_max, spacing):
         # sort the layers to ensure the layers are properly ordered
@@ -366,8 +372,8 @@ class LayeredModel:
         return z_interp, v_interp
 
     def gen_3d_grid(self, dims, origin, spacing):
-        model_grid_3d = ModelGrid3D.from_layered_model(self, dims, origin,
-                                                       spacing)
+        model_grid_3d = VelocityGrid3D.from_layered_model(self, dims, origin,
+                                                          spacing)
         return model_grid_3d
 
     def plot(self, z_min, z_max, spacing, *args, **kwargs):
@@ -406,38 +412,48 @@ class LayeredModel:
         return ax
 
 
-class ModelGrid3D(NLLocGrid):
+class VelocityGrid3D(NLLocGrid):
 
-    def __init__(self, code, data_or_dims, origin, spacing,
+    def __init__(self, project_code, data_or_dims, origin, spacing,
                  phase='P', path='.', value=0, float_type='FLOAT',
-                 model_id=None):
-        self.code = code
+                 model_id=None, **kwargs):
+        self.project_code = project_code
         self.path = path
-        base_name = f'{code}.{phase.upper()}.mod'
-        self.layers = layers
+        base_name = f'{project_code}.{phase.upper()}.mod'
         super().__init__(base_name, data_or_dims, origin, spacing, phase,
                  seed=None, seed_label=None, value=value,
                  grid_type='VELOCITY_METERS', grid_units='METER',
                  float_type=float_type, model_id=model_id)
 
     @classmethod
-    def from_layered_model(cls, layered_model, code, dims, origin,
-                           spacing):
+    def from_layered_model(cls, layered_model, dims, origin,
+                           spacing, **kwargs):
         """
-        Create a velocity model from a VelocityLayers object
-        :param layers: A LayeredModel Object
-        :return: None
+        Generating a 3D grid model from
+        :param layered_model:
+        :param code:
+        :param dims:
+        :param origin:
+        :param spacing:
+        :param kwargs:
+        :return:
         """
 
         z_min = origin[-1]
         z_max = z_min + spacing[-1] * dims[-1]
 
-        z_interp, v_interp = layered_model.gen_1d_model(z_min, z_max, spacing)
+        z_interp, v_interp = layered_model.gen_1d_model(z_min, z_max,
+                                                        spacing[-1])
 
         data = np.zeros(dims)
 
         for i, v in enumerate(v_interp):
             data[:, :, i] = v_interp[i]
+
+        return cls(layered_model.project_code, data, origin, spacing,
+                   phase=layered_model.phase,
+                   float_type=layered_model.float_type,
+                   model_id=layered_model.model_id, **kwargs)
 
     def gen_derivative_grids(self, time=True, angle=True, take_off_angle=True):
         """
