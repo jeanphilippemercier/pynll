@@ -37,19 +37,173 @@ from obspy.core import AttribDict
 from uquake.core.grid import read_grid
 from uquake.core.event import Arrival, Catalog, Origin
 
+__valid_geographic_transformation__ = ['GLOBAL', 'SIMPLE', 'NONE', 'SDC',
+                                       'LAMBERT']
+
+
+def validate_geographic_transformation(geographic_transformation):
+    if geographic_transformation not in __valid_geographic_transformation__:
+        msg = f'geographic transformation should be one of the followings :\n'
+        for valid_geograhic_transformation in \
+                __valid_geographic_transformation__:
+            msg += f'{valid_geograhic_transformation}\n'
+        raise ValueError(msg)
+
+class Control:
+    def __init__(self, message_flag=-1, random_seed=1000):
+        """
+        Control section of the NLL control file
+        :param message_flag: (integer, min:-1, default:1) sets the verbosity
+        level for messages printed to the terminal
+        ( -1 = completely silent, 0 = error messages only, 1 = 0 +
+        higher-level warning and progress messages, 2 and higher = 1 +
+        lower-level warning and progress messages + information messages, ...)
+
+        :param random_seed: (integer) integer seed value for generating random
+        number sequences (used by program NLLoc to generate Metropolis samples
+        and by program Time2EQ to generate noisy time picks)
+        """
+        self.message_flag = int(message_flag)
+        self.random_seed = int(random_seed)
+
+    def __setattr__(self, key, value):
+        if key not in self.__dict__.keys():
+            raise AttributeError(f'{key} is not a valid attribute')
+        self.__dict__['key'] = value
+
+    def __str__(self):
+        return f'CONTROL {self.message_flag} {self.random_seed}\n'
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class GeographicTransformation:
+    def __init__(self, transformation='NONE'):
+        validate_geographic_transformation(transformation)
+        self.transformation = transformation
+
+    def __str__*
+
+
+class SimpleGeographicTransformation(GeographicTransformation):
+    def __init__(self, latitude_origin, longitude_origin, rotation_angle):
+
+        """
+        The SIMPLE transformation only corrects longitudinal distances as a
+        function of latitude Algorithm:
+
+        >> x = (long - longOrig) * 111.111 * cos(lat_radians);
+        >> y = (lat - latOrig) * 111.111;
+        >> lat = latOrig + y / 111.111;
+        >> long = longOrig + x / (111.111 * cos(lat_radians));
+
+        :param latitude_origin: (float, min:-90.0, max:90.0) latitude in
+        decimal degrees of the rectangular coordinates origin
+        :param longitude_origin: (float, min:-180.0, max:180.0) longitude in
+        decimal degrees of the rectangular coordinates origin
+        :param rotation_angle: (float, min:-360.0, max:360.0) rotation angle
+        of geographic north in degrees clockwise relative to the rectangular
+        coordinates system Y-axis
+        """
+
+        if -90 > latitude_origin > 90:
+            raise ValueError('latitude_origin must be comprised between '
+                             '-90 and 90 degrees')
+        if -180 > longitude_origin > 180:
+            raise ValueError('longitude_origin must be comprised between '
+                             '-180 and 180 degrees')
+
+        if -360 > rotation_angle > 360:
+            raise ValueError('the rotation angle must be comprised between '
+                             '-360 and 360 degrees')
+
+        self.latitude_origin = latitude_origin
+        self.longitude_origin = longitude_origin
+        self.rotation_angle = rotation_angle
+
+        super.__init__(transformation='SIMPLE')
+
+    def __setattr__(self, key, value):
+        if key in self.__dict__.keys():
+
+
+
+class NLLocCtrlFile:
+    def __init__(self):
+        self.generic_control_statements = {
+            'control': '',
+            'geographic_transformation': '',
+        }
+
+        # not yet implemented
+        self.vel2grid = {
+            'velocity_output_root': '',
+            'wave_type': '',
+            'grid_description': '',
+            'model_layers': [],
+            'model_vertices': [],
+            ''
+
+
+        }
+
+        # vel2grid
+        self.vel2grid_velocity_output = ''
+        self.vel2grid_wave_type = ''
+        self.grid_description = ''
+        self.velocity_layer = ''
+        self.trans_2d_3d = ''
+        self.velocity_model_vertex = ''
+        self.velocity_model_edge = ''
+        self.velocity_model_2d_polygon = ''
+
+        # grid2time
+        self.input_output_file_root
+        self.program_mode
+
+
+
+    def add_control_section(self, message_flag, random_seed):
+        """
+        Sets various general program control parameters.
+
+        :param message_flag: (integer, min:-1, default:1) sets the verbosity
+        level for messages printed to the terminal
+        ( -1 = completely silent, 0 = error messages only, 1 = 0 +
+        higher-level warning and progress messages, 2 and higher = 1 +
+        lower-level warning and progress messages + information messages, ...)
+
+        :param random_seed: (integer) integer seed value for generating random
+        number sequences (used by program NLLoc to generate Metropolis samples
+        and by program Time2EQ to generate noisy time picks)
+        """
+
+        self.control_section =
+
+        if type(message_flag)
+
+
+
+__ctrl_file_control__ = 'CONTROL {message_flag} {seed}'
+
+__ctrl_file_geographic_transformation__ = 'TRANS {transform}'
+
+__ctrl_file_
+
+__ctrl_file_velocity_section__ = """
+
+VGOUT {velocity_output_dir}
+
+"""
+
+
+
 
 control_section = {'verbosity_level': 0}
 
 class CtrlFile:
     def __init__(self, verbosity_level=0, seed=1000, phases=[], ):
-
-ctrl_file_header_template = """
-CONTROL {verbosity} {seed}
-
-TRANS NONE  # works only for cartesian grids
-
-VGOUT {velocity_output_dir}
-"""
 
 
 def read_nlloc_hypocenter_file(filename, picks=None,
@@ -1194,7 +1348,7 @@ class NLLControl(AttribDict):
             fout.write(str(self))
 
     __ctrl_tmpl = \
-        """
+"""
 CONTROL 0 54321
 TRANS NONE
 VGOUT  <VGOUT> #<BASEFOLDER>/model/layer
