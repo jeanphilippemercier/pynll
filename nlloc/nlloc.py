@@ -30,24 +30,29 @@ from time import time
 
 import numpy as np
 import obspy.core.event
-from uquake.logging import logger
+from uquake.core.logging import logger
 from obspy import UTCDateTime
 from obspy.core import AttribDict
 
 from uquake.core.grid import read_grid
 from uquake.core.event import Arrival, Catalog, Origin
 
+def validate(value, choices):
+    if value not in choices:
+        msg = f'value should be one of the following choices\n:'
+        for choice in choices:
+            msg += f'{choice}\n'
+        raise ValueError(msg)
+    return True
+
 __valid_geographic_transformation__ = ['GLOBAL', 'SIMPLE', 'NONE', 'SDC',
                                        'LAMBERT']
 
+__valid_reference_ellipsoid__ = ['WGS-84', 'GRS-80', 'WGS-72', 'Australian',
+                                 'Krasovsky', 'International', 'Hayford-1909'
+                                 'Clarke-1880', 'Clarke-1866', 'Airy Bessel',
+                                 'Hayford-1830', 'Sphere']
 
-def validate_geographic_transformation(geographic_transformation):
-    if geographic_transformation not in __valid_geographic_transformation__:
-        msg = f'geographic transformation should be one of the followings :\n'
-        for valid_geograhic_transformation in \
-                __valid_geographic_transformation__:
-            msg += f'{valid_geograhic_transformation}\n'
-        raise ValueError(msg)
 
 class Control:
     def __init__(self, message_flag=-1, random_seed=1000):
@@ -80,18 +85,20 @@ class Control:
 
 class GeographicTransformation:
     def __init__(self, transformation='NONE'):
-        validate_geographic_transformation(transformation)
+        validate(transformation, __valid_geographic_transformation__)
         self.transformation = transformation
 
-    def __str__*
+    def __repr__(self):
+        line = f'TRANSFORMATION {self.transformation}'
 
 
-class SimpleGeographicTransformation(GeographicTransformation):
-    def __init__(self, latitude_origin, longitude_origin, rotation_angle):
+class SimpleSDCGeographicTransformation(GeographicTransformation):
 
+    def __init__(self, latitude_origin, longitude_origin,
+                 rotation_angle, simple=True):
         """
-        The SIMPLE transformation only corrects longitudinal distances as a
-        function of latitude Algorithm:
+        The SIMPLE or SDC transformation only corrects longitudinal
+        distances as a function of latitude Algorithm:
 
         >> x = (long - longOrig) * 111.111 * cos(lat_radians);
         >> y = (lat - latOrig) * 111.111;
@@ -105,6 +112,8 @@ class SimpleGeographicTransformation(GeographicTransformation):
         :param rotation_angle: (float, min:-360.0, max:360.0) rotation angle
         of geographic north in degrees clockwise relative to the rectangular
         coordinates system Y-axis
+        :param simple: Transformation is set to SIMPLE if simple is True.
+        Transformation is set to SDC if simple is set to False
         """
 
         if -90 > latitude_origin > 90:
@@ -122,11 +131,80 @@ class SimpleGeographicTransformation(GeographicTransformation):
         self.longitude_origin = longitude_origin
         self.rotation_angle = rotation_angle
 
-        super.__init__(transformation='SIMPLE')
+        if simple:
+            transformation = 'SIMPLE'
+        else:
+            transformation = 'SDC'
+
+        super.__init__(transformation=transformation)
 
     def __setattr__(self, key, value):
         if key in self.__dict__.keys():
+            self.__dict__[key] = value
 
+    def __repr__(self):
+        line = f'TRANS {self.transformation} {self.latitude_origin} ' \
+               f'{self.longitude_origin} {self.rotation_angle}'
+
+        return line
+
+class LambertGeographicTransformation(GeographicTransformation):
+    def __init__(self, reference_ellipsoid, latitude_origin,
+                 longitude_origin, first_standard_parallax,
+                 second_standard_parallax, rotation_angle):
+        """
+        Define a Lambert coordinates system for transformation from Lambert
+        geographic coordinates to a cartesian/rectangular system.
+        :param reference_ellipsoid: (choice: WGS-84 GRS-80 WGS-72
+        Australian Krasovsky International Hayford-1909 Clarke-1880
+        Clarke-1866 Airy Bessel Hayford-1830 Sphere) reference ellipsoid name
+        :param latitude_origin: (float, min:-90.0, max:90.0) latitude in
+        decimal degrees of the rectangular coordinates origin
+        :param longitude_origin: (float, min:-180.0, max:180.0) longitude in
+        decimal degrees of the rectangular coordinates origin
+        :param first_standard_parallax: (float, min:-90.0, max:90.0) first
+        standard parallels (meridians) in decimal degrees
+        :param second_standard_parallax: (float, min:-90.0, max:90.0)
+        second standard parallels (meridians) in decimal degrees
+        :param rotation_angle: (float, min:-360.0, max:360.0) rotation angle
+        of geographic north in degrees clockwise relative to the rectangular
+        coordinates system Y-axis
+        """
+
+        validate(reference_ellipsoid, __valid_reference_ellipsoid__)
+
+        self.reference_ellipsoid = reference_ellipsoid
+
+        if -90 > latitude_origin > 90:
+            raise ValueError('latitude_origin must be comprised between '
+                             '-90 and 90 degrees')
+        if -180 > longitude_origin > 180:
+            raise ValueError('longitude_origin must be comprised between '
+                             '-180 and 180 degrees')
+
+        if -360 > rotation_angle > 360:
+            raise ValueError('the rotation angle must be comprised between '
+                             '-360 and 360 degrees')
+
+        if -90 > first_standard_parallax > 90:
+            raise ValueError('first_standard_parallax must be comprised '
+                             'between -90 and 90 degrees')
+
+        if -90 > second_standard_parallax > 90:
+            raise ValueError('second_standard_parallax must be comprised '
+                             'between -90 and 90 degrees')
+
+        self.latitude_origin = latitude_origin
+        self.longitude_origin = longitude_origin
+        self.rotation_angle = rotation_angle
+        self.first_standard_parallax = first_standard_parallax
+        self.second_standard_parallax = second_standard_parallax
+
+    def __repr__(self):
+        line = f'TRANS LAMBERT {self.reference_ellipsoid} ' \
+               f'{self.latitude_origin} {self.longitude_origin} ' \
+               f'{self.first_standard_parallax} ' \
+               f'{self.second_standard_parallax} {self.rotation_angle}'
 
 
 class NLLocCtrlFile:
