@@ -29,13 +29,19 @@ from struct import unpack
 from time import time
 
 import numpy as np
-import obspy.core.event
+from uquake.core.inventory import Inventory
+import uquake.core.event
 from uquake.core.logging import logger
 from obspy import UTCDateTime
 from obspy.core import AttribDict
 
 from uquake.core.grid import read_grid
 from uquake.core.event import Arrival, Catalog, Origin
+
+from uuid import uuid4
+
+from pathlib import Path
+
 
 def validate(value, choices):
     if value not in choices:
@@ -44,6 +50,12 @@ def validate(value, choices):
             msg += f'{choice}\n'
         raise ValueError(msg)
     return True
+
+
+def validate_type(obj, expected_type):
+    if type(obj) is not expected_type:
+        raise TypeError('object is not the right type')
+
 
 __valid_geographic_transformation__ = ['GLOBAL', 'SIMPLE', 'NONE', 'SDC',
                                        'LAMBERT']
@@ -54,7 +66,233 @@ __valid_reference_ellipsoid__ = ['WGS-84', 'GRS-80', 'WGS-72', 'Australian',
                                  'Hayford-1830', 'Sphere']
 
 
+class Grid2Time:
+    def __init__(self, inventory, base_directory, base_name, verbosity=1,
+                 random_seed=1000, p_wave=True, s_wave=True,
+                 calculate_angles=True, model_directory='models',
+                 grid_directory='grids'):
+        """
+        Build the control file and run the Grid2Time program.
+
+        Note that at this time the class does not support any geographic
+        transformation and assumes
+
+        :param inventory: inventory file
+        :type inventory: uquake.core.inventory.Inventory
+        :param base_directory: the base directory of the project
+        :type base_directory: str
+        :param base_name: the network code
+        :type base_name: str
+        :param verbosity: sets the verbosity level for messages printed to
+        the terminal ( -1 = completely silent, 0 = error messages only,
+        1 = 0 + higher-level warning and progress messages,
+        2 and higher = 1 + lower-level warning and progress messages +
+        information messages, ...) default: 1
+        :type verbosity: int
+        :param random_seed:  integer seed value for generating random number
+        sequences (used by program NLLoc to generate Metropolis samples and
+        by program Time2EQ to generate noisy time picks)
+        :param p_wave: if True calculate the grids for the P-wave
+        :type p_wave: bool
+        :param s_wave: if True calculate the grids for the S-wave
+        :type s_wave: bool
+        :param calculate_angles: if true calculate the azimuth and the
+        take-off angles
+        :type calculate_angles: bool
+        :param model_directory: location of the model directory relative to
+        the base_directory
+        :type model_directory: str
+        :param grid_directory: location of the grid directory relative to
+        the base_directory
+        """
+
+        self.verbosity = verbosity
+        self.random_seed = random_seed
+        self.base_name = base_name
+
+        self.base_directory = Path(base_directory)
+        self.velocity_model_path = self.base_directory / f'{model_directory}'
+        self.grid_path = self.base_directory / f'{grid_directory}'
+
+        # create the velocity_model_path and the grid_path if they do not exist
+        self.grid_path.mkdir(parents=True, exist_ok=True)
+        self.velocity_model_path.mkdir(parents=True, exist_ok=True)
+
+        self.calculate_p_wave = p_wave
+        self.calculate_s_wave = s_wave
+        self.calculate_angles = calculate_angles
+
+        if type(inventory) is not Inventory:
+            raise TypeError('inventory must be '
+                            '"uquake.core.inventory.Inventory" type')
+        self.inventory = inventory
+
+    def run(self):
+        if self.calculate_p_wave:
+            self.__write_control_file__('P')
+            # run
+
+        if self.calculate_s_wave:
+            self.__write_control_file__('S')
+
+    def __write_control_file__(self, phase):
+
+        ctrl_dir = f'{self.base_directory}/run/'
+        Path(ctrl_dir).mkdir(parents=True, exist_ok=True)
+
+        # create the directory if the directory does not exist
+
+        ctrl_file = ctrl_dir + f'{str(uuid4())}.ctl'
+        with open(ctrl_file, 'w') as ctrl:
+            # writing the control section
+            ctrl.write(f'CONTROL {self.verbosity} {self.random_seed}\n')
+
+            # writing the geographic transformation section
+            ctrl.write('TRANS NONE\n')
+
+            # writing the Grid2Time section
+            out_line = f'GTFILES ' \
+                       f'{self.velocity_model_path}/{self.base_name} ' \
+                       f'{self.grid_path}/{self.base_name} ' \
+                       f'{phase} 0\n'
+
+            ctrl.write(out_line)
+
+            if self.calculate_angles:
+                angle_mode = 'ANGLES_YES'
+            else:
+                angle_mode = 'ANGLE_NO'
+
+            ctrl.write(f'GTMODE GRID3D {angle_mode}\n')
+
+            for sensor in self.inventory.sensors:
+                # test if sensor name is shorter than 6 characters
+
+                out_line = f'GTSRCE {sensor.code} XYZ ' \
+                           f'{sensor.x / 1000:>10.6f} ' \
+                           f'{sensor.y / 1000 :>10.6f} ' \
+                           f'{sensor.z / 1000 :>10.6f} ' \
+                           f'0.00\n'
+
+                ctrl.write(out_line)
+
+            ctrl.write(f'GT_PLFD 1.0e-4 {self.verbosity + 1}\n')
+
+
+class GridTimeFiles:
+    def __init__(self, velocity_file_path, travel_time_file_path, p_wave=True,
+                 swap_bytes_on_input=False):
+        """
+        Specifies the directory path and file root name (no extension), and
+        the wave type identifier for the input velocity grid and output
+        time grids.
+        :param velocity_file_path: full or relative path and file
+        root name (no extension) for input velocity grid (generated by
+        program Vel2Grid)
+        :type velocity_file_path: str
+        :param travel_time_file_path: full or relative path and file
+        root name (no extension) for output travel-time and take-off angle
+        grids
+        :type travel_time_file_path: str
+        :param p_wave: p-wave if True, s-wave if False
+        :type p_wave: bool
+        :param swap_bytes_on_input: flag to indicate if hi and low bytes of
+        input velocity grid file should be swapped
+        :type swap_bytes_on_input: bool
+        """
+
+        self.velocity_file_path = velocity_file_path
+        self.travel_time_file_path = travel_time_file_path
+        if p_wave:
+            self.phase = 'P'
+        else:
+            self.phase = 'S'
+
+        self.swap_bytes_on_input=int(swap_bytes_on_input)
+
+    def __repr__(self):
+        return f'GTFILES {self.velocity_file_path} ' \
+               f'{self.travel_time_file_path} {self.phase} ' \
+               f'{self.swap_bytes_on_input}'
+
+
+class GridTimeMode:
+    def __init__(self, grid_3d=True, calculate_angles=True):
+        """
+        Specifies several program run modes.
+        :param grid_3d: if True 3D grid if False 2D grid
+        :type grid_3d: bool
+        :param calculate_angles: if True calculate angles and not if False
+        :type calculate_angles: bool
+        """
+
+        if grid_3d:
+            self.grid_mode = 'GRID3D'
+        else:
+            self.grid_mode = 'GRID2D'
+
+        if calculate_angles:
+            self.angle_mode = 'ANGLES_YES'
+        else:
+            self.angle_mode = 'ANGLES_NO'
+
+    def __repr__(self):
+        return f'GTMODE {self.grid_mode} {self.angle_mode}'
+
+
+class GridTypeSensors:
+    def __init__(self, inventory):
+        """
+        specifies a series of source location from an inventory object
+        :param inventory: inventory object
+        :type inventory: uquake.core.inventory.Inventory
+        """
+
+        self.inventory = inventory
+
+    def __repr__(self):
+        txt = ""
+        for sensor in self.inventory.sensors:
+
+            # test if sensor name is shorter than 6 characters
+
+            txt += f'GTSRCE {sensor.code} XYZ ' \
+                   f'{sensor.x:>10.2f} ' \
+                   f'{sensor.y:>10.2f} ' \
+                   f'{sensor.z:>10.2f} ' \
+                   f'0.00\n'
+
+        return txt
+
+
 class Control:
+    def __init__(self, message_flag=-1, random_seed=1000):
+        """
+        Control section
+        :param message_flag: (integer, min:-1, default:1) sets the verbosity
+        level for messages printed to the terminal ( -1 = completely silent,
+        0 = error messages only, 1 = 0 + higher-level warning and progress
+        messages, 2 and higher = 1 + lower-level warning and progress
+        messages + information messages, ...)
+        :param random_seed:(integer) integer seed value for generating random
+        number sequences (used by program NLLoc to generate Metropolis samples
+        and by program Time2EQ to generate noisy time picks)
+        """
+        try:
+            self.message_flag=int(message_flag)
+        except Exception as e:
+            raise e
+
+        try:
+            self.random_seed=int(random_seed)
+        except Exception as e:
+            raise e
+
+    def __repr__(self):
+        return f'CONTROL {self.message_flag} {self.random_seed}'
+
+
+class ControlFile:
     def __init__(self, message_flag=-1, random_seed=1000):
         """
         Control section of the NLL control file
@@ -68,8 +306,23 @@ class Control:
         number sequences (used by program NLLoc to generate Metropolis samples
         and by program Time2EQ to generate noisy time picks)
         """
-        self.message_flag = int(message_flag)
-        self.random_seed = int(random_seed)
+        # set default values for the generic control statement parameters
+        self.control = {'message_flag': -1,
+                        'random_seed': 1000}
+
+        self.geographic_transformation = {'transformation' : 'NONE',
+                                          'latitude_origin': None,
+                                          'longitude_origin': None,
+                                          'rotation_angle': None,
+                                          'reference_ellipsoid': None,
+                                          'first_standard_parallax': None,
+                                          'second_standard_parallax': None}
+
+        self.vel2grid = {'output_file_root_name' : None,
+                         'phase': None}
+
+        # a grid should be added
+        self.grid = None
 
     def __setattr__(self, key, value):
         if key not in self.__dict__.keys():
@@ -148,6 +401,7 @@ class SimpleSDCGeographicTransformation(GeographicTransformation):
 
         return line
 
+
 class LambertGeographicTransformation(GeographicTransformation):
     def __init__(self, reference_ellipsoid, latitude_origin,
                  longitude_origin, first_standard_parallax,
@@ -220,11 +474,7 @@ class NLLocCtrlFile:
             'wave_type': '',
             'grid_description': '',
             'model_layers': [],
-            'model_vertices': [],
-            ''
-
-
-        }
+            'model_vertices': []}
 
         # vel2grid
         self.vel2grid_velocity_output = ''
@@ -242,24 +492,24 @@ class NLLocCtrlFile:
 
 
 
-    def add_control_section(self, message_flag, random_seed):
-        """
-        Sets various general program control parameters.
-
-        :param message_flag: (integer, min:-1, default:1) sets the verbosity
-        level for messages printed to the terminal
-        ( -1 = completely silent, 0 = error messages only, 1 = 0 +
-        higher-level warning and progress messages, 2 and higher = 1 +
-        lower-level warning and progress messages + information messages, ...)
-
-        :param random_seed: (integer) integer seed value for generating random
-        number sequences (used by program NLLoc to generate Metropolis samples
-        and by program Time2EQ to generate noisy time picks)
-        """
-
-        self.control_section =
-
-        if type(message_flag)
+    # def add_control_section(self, message_flag, random_seed):
+    #     """
+    #     Sets various general program control parameters.
+    #
+    #     :param message_flag: (integer, min:-1, default:1) sets the verbosity
+    #     level for messages printed to the terminal
+    #     ( -1 = completely silent, 0 = error messages only, 1 = 0 +
+    #     higher-level warning and progress messages, 2 and higher = 1 +
+    #     lower-level warning and progress messages + information messages, ...)
+    #
+    #     :param random_seed: (integer) integer seed value for generating random
+    #     number sequences (used by program NLLoc to generate Metropolis samples
+    #     and by program Time2EQ to generate noisy time picks)
+    #     """
+    #
+    #     self.control_section =
+    #
+    #     if type(message_flag)
 
 
 
@@ -267,7 +517,7 @@ __ctrl_file_control__ = 'CONTROL {message_flag} {seed}'
 
 __ctrl_file_geographic_transformation__ = 'TRANS {transform}'
 
-__ctrl_file_
+# __ctrl_file_
 
 __ctrl_file_velocity_section__ = """
 
@@ -282,6 +532,7 @@ control_section = {'verbosity_level': 0}
 
 class CtrlFile:
     def __init__(self, verbosity_level=0, seed=1000, phases=[], ):
+        pass
 
 
 def read_nlloc_hypocenter_file(filename, picks=None,
