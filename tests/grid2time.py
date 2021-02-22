@@ -3,8 +3,10 @@ from importlib import reload
 from uquake.core.inventory import read_inventory
 import os
 from pathlib import Path
-from nlloc.grid import (NLLocGrid, LayeredVelocityModel, ModelLayer,
-                        VelocityGrid3D)
+# from nlloc.grid import (NLLocGrid, LayeredVelocityModel, ModelLayer,
+#                         VelocityGrid3D)
+
+from nlloc import grid
 from time import time
 from loguru import logger
 
@@ -12,6 +14,7 @@ import numpy as np
 
 import timeit
 reload(nlloc)
+reload(grid)
 
 test_artifacts = os.environ['UQUAKE_TEST_ARTIFACTS']
 inventory_file = test_artifacts + '/inventory.xml'
@@ -37,13 +40,13 @@ z = [1168, 459, -300, -500]
 vp_z = [4533, 5337, 5836, 5836]
 vs_z = [2306, 2885, 3524, 3524]
 
-layered_model_p = LayeredVelocityModel(phase='P')
-layered_model_s = LayeredVelocityModel(phase='S')
+layered_model_p = grid.LayeredVelocityModel(phase='P')
+layered_model_s = grid.LayeredVelocityModel(phase='S')
 
 for (z_, vp, vs) in zip(z, vp_z, vs_z):
-    layer_p = ModelLayer(z_, vp)
+    layer_p = grid.ModelLayer(z_, vp)
     layered_model_p.add_layer(layer_p)
-    layer_s = ModelLayer(z_, vs)
+    layer_s = grid.ModelLayer(z_, vs)
     layered_model_s.add_layer(layer_s)
 
 base_directory = Path(test_artifacts) / 'vel2grid'
@@ -80,12 +83,19 @@ for sensor in inventory.sensors:
     seed_labels.append(sensor.code)
 
 t0 = time()
-results = vel_3d_s.to_time_multi_threaded(seeds, seed_labels)
+travel_time_grids_s = vel_3d_s.to_time_multi_threaded(seeds, seed_labels)
+travel_time_grids_p = vel_3d_s.to_time_multi_threaded(seeds, seed_labels)
 t1 = time()
+logger.info(f'done calculating the travel time grids in {t1-t0:0.2f} second')
 
-logger.info(f'done calculating the travel time grids in {t1-t0:0.2f} seconds')
+travel_time_grids = travel_time_grids_p + travel_time_grids_s
 
-ray = results[0].ray_tracer([10, 10, 10], grid_coordinates=True)
+t0 = time()
+rays = travel_time_grids.ray_tracer(np.array(origin) + 200)
+t1 = time()
+logger.info(f'done calculating the rays in {t1-t0:0.2f} second')
+
+# ray = results[0].ray_tracer([10, 10, 10], grid_coordinate=True)
 
 
 # timeit.timeit(vel_3d_p.eikonal(seed, seed_label), number=10)
