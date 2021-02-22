@@ -23,6 +23,10 @@ from uuid import uuid4
 import matplotlib.pyplot as plt
 from loguru import logger
 import skfmm
+from multiprocessing import Pool, cpu_count
+from functools import partial
+
+__cpu_count__ = cpu_count()
 
 
 valid_phases = ('P', 'S')
@@ -534,7 +538,8 @@ class VelocityGrid3D(NLLocGrid):
                       seed, seed_label, phase=self.phase,
                       float_type=self.float_type, model_id=self.model_id)
 
-    def to_time_multi_threaded(self, seeds, seed_labels, *args, **kwargs):
+    def to_time_multi_threaded(self, seeds, seed_labels, cpu_utilisation=0.9,
+                               *args, **kwargs):
         """
         Multithreaded version of the Eikonal solver
         based on scikit fast marching solver
@@ -542,17 +547,21 @@ class VelocityGrid3D(NLLocGrid):
         :type seeds: np.array
         :param seed_labels: array of seed_labels
         :type seed_labels: np.array
+        :param cpu_utilisation: fraction of the cpu core to be used for the
+        processing task (between 0 and 1)
+        :type cpu_utilisation: float between 0 and 1
         :param args: arguments to be passed directly to skfmm.travel_time
         function
         :param kwargs: keyword arguments to be passed directly to
         skfmm.travel_time function
-        :return: a list of TTGrids
+        :return: a travel time grid ensemble
+        :rtype: TravelTimeEnsemble
         """
 
-        from multiprocessing import Pool, cpu_count
-        import contextlib
-
-        num_threads = int(np.ceil(0.95 * cpu_count()))
+        num_threads = int(np.ceil(cpu_utilisation * __cpu_count__))
+        # ensuring that the number of threads is comprised between 1 and
+        # __cpu_count__
+        num_threads = np.max([np.min([num_threads, __cpu_count__]), 1])
 
         data = []
         for seed, seed_label in zip(seeds, seed_labels):
@@ -565,7 +574,9 @@ class VelocityGrid3D(NLLocGrid):
         with Pool(num_threads) as pool:
             results = pool.starmap(self.to_time, data)
 
-        return results
+        tt_grid_ensemble = TravelTimeEnsemble(results)
+
+        return tt_grid_ensemble
 
     def write(self, path='.'):
 
@@ -599,7 +610,10 @@ class SeededGrid(NLLocGrid):
                          grid_type='TIME', grid_units='SECOND',
                          float_type=float_type, model_id=model_id)
 
-    @property
+    def __repr__(self):
+        repr = f'{self.seed_label}: {self.seed}\n'
+        return repr
+
     def base_name(self):
         base_name = f'{self.network_code}.{self.phase}.{self.seed_label}.' \
                     f'{self.grid_type.lower()}'
@@ -649,13 +663,13 @@ class TTGrid(SeededGrid):
                          phase=self.phase, float_type=self.float_type,
                          model_id=self.model_id)
 
-    def to_azimuth_point(self, coord, grid_coordinates=False, mode='linear',
+    def to_azimuth_point(self, coord, grid_coordinate=False, mode='nearest',
                          order=1, **kwargs):
         """
         calculate the azimuth angle at a particular point on the grid for a
         given seed location
         :param coord: coordinates at which to calculate the takeoff angle
-        :param grid_coordinates: true if the coordinates are expressed in
+        :param grid_coordinate: true if the coordinates are expressed in
         grid space (indices can be fractional) as opposed to model space
         (x, y, z)
         :param mode: interpolation mode
@@ -664,16 +678,16 @@ class TTGrid(SeededGrid):
         """
 
         return self.to_azimuth().interpolate(coord,
-                                             grid_coordinates=grid_coordinates,
+                                             grid_coordinate=grid_coordinate,
                                              mode=mode, order=order, **kwargs)
 
-    def to_takeoff_point(self, coord, grid_coordinates=False, mode='linear',
+    def to_takeoff_point(self, coord, grid_coordinate=False, mode='nearest',
                          order=1, **kwargs):
         """
         calculate the takeoff angle at a particular point on the grid for a
         given seed location
         :param coord: coordinates at which to calculate the takeoff angle
-        :param grid_coordinates: true if the coordinates are expressed in
+        :param grid_coordinate: true if the coordinates are expressed in
         grid space (indices can be fractional) as opposed to model space
         (x, y, z)
         :param mode: interpolation mode
@@ -681,10 +695,10 @@ class TTGrid(SeededGrid):
         :return: takeoff angle at the location coord
         """
         return self.to_takeoff().interpolate(coord,
-                                             grid_coordinates=model_space,
+                                             grid_coordinate=grid_coordinate,
                                              mode=mode, order=order, **kwargs)
 
-    def ray_tracer(self, start, grid_coordinates=False, max_iter=1000,
+    def ray_tracer(self, start, grid_coordinate=False, max_iter=1000,
                    arrival_id=None):
         """
         This function calculates the ray between a starting point (start) and an
@@ -692,7 +706,7 @@ class TTGrid(SeededGrid):
         gradient descent method.
         :param start: the starting point (usually event location)
         :type start: tuple, list or numpy.array
-        :param grid_coordinates: true if the coordinates are expressed in
+        :param grid_coordinate: true if the coordinates are expressed in
         grid space (indices can be fractional) as opposed to model space
         (x, y, z)
         :param max_iter: maximum number of iteration
@@ -703,7 +717,7 @@ class TTGrid(SeededGrid):
 
         from uquake.core.event import Ray
 
-        if grid_coordinates:
+        if grid_coordinate:
             start = np.array(start)
             start = self.transform_from(start)
 
@@ -743,14 +757,261 @@ class TTGrid(SeededGrid):
 
         nodes.append(end)
 
+        tt = self.interpolate(start, grid_coordinate=False, order=1)
+        az = self.to_azimuth_point(start, grid_coordinate=False,
+                                   order=1)
+        toa = self.to_takeoff_point(start, grid_coordinate=False,
+                                    order=1)
+
         ray = Ray(nodes=nodes, station_code=self.seed_label,
-                  phase=self.phase)
+                  arrival_id=arrival_id, phase=self.phase,
+                  azimuth=az, takeoff_angle=toa, travel_time=tt)
 
         return ray
 
     @classmethod
     def from_velocity(cls, seed, seed_label, velocity_grid):
         return velocity_grid.eikonal(seed, seed_label)
+
+
+def ray_tracer(travel_time_grid, start, grid_coordinate=False, max_iter=1000,
+               arrival_id=None):
+    """
+    This function calculates the ray between a starting point (start) and an
+    end point, which should be the seed of the travel_time grid, using the
+    gradient descent method.
+    :param start: the starting point (usually event location)
+    :type start: tuple, list or numpy.array
+    :param grid_coordinate: true if the coordinates are expressed in
+    grid space (indices can be fractional) as opposed to model space
+    (x, y, z)
+    :param max_iter: maximum number of iteration
+    :param arrival_id: id of the arrival associated to the ray if
+    applicable
+    :rtype: numpy.array
+    """
+
+    from uquake.core.event import Ray
+
+    if grid_coordinate:
+        start = np.array(start)
+        start = travel_time_grid.transform_from(start)
+
+    origin = travel_time_grid.origin
+    spacing = travel_time_grid.spacing
+    end = np.array(travel_time_grid.seed)
+    start = np.array(start)
+
+    # calculating the gradient in every dimension at every grid points
+    gds = [Grid(gd, origin=origin, spacing=spacing)
+           for gd in np.gradient(travel_time_grid.data)]
+
+    dist = np.linalg.norm(start - end)
+    cloc = start  # initializing cloc "current location" to start
+    gamma = spacing / 2  # gamma is set to half the grid spacing. This
+    # should be
+    # sufficient. Note that gamma is fixed to reduce
+    # processing time.
+    nodes = [start]
+
+    iter_number = 0
+    while np.all(dist > spacing / 2):
+        if iter_number > max_iter:
+            break
+
+        if np.all(dist < spacing * 4):
+            gamma = np.min(spacing) / 4
+
+        gvect = np.array([gd.interpolate(cloc, grid_coordinate=False,
+                                         order=1)[0] for gd in gds])
+
+        cloc = cloc - gamma * gvect / np.linalg.norm(gvect)
+        nodes.append(cloc)
+        dist = np.linalg.norm(cloc - end)
+
+        iter_number += 1
+
+    nodes.append(end)
+
+    tt = travel_time_grid.interpolate(start, grid_coordinate=False, order=1)
+    az = travel_time_grid.to_azimuth_point(start, grid_coordinate=False,
+                               order=1)
+    toa = travel_time_grid.to_takeoff_point(start, grid_coordinate=False,
+                                order=1)
+
+    ray = Ray(nodes=nodes, station_code=travel_time_grid.seed_label,
+              arrival_id=arrival_id, phase=travel_time_grid.phase,
+              azimuth=az, takeoff_angle=toa, travel_time=tt)
+
+    return ray
+
+
+class TravelTimeEnsemble:
+    def __init__(self, travel_time_grids):
+        """
+        Combine a list of travel time grids together providing meta
+        functionality (multi-threaded ray tracing, sorting, travel-time
+        calculation for a specific location etc.). It is assumed that
+        all grids are compatible, i.e., that all the grids have the same
+        origin, spacing and dimensions.
+        :param travel_time_grids: a list of TTGrid objects
+        """
+
+        self.travel_time_grids = travel_time_grids
+        self.__i__ = 0
+
+    def __len__(self):
+        return len(self.travel_time_grids)
+
+    def __add__(self, other):
+        for travel_time_grid in other.travel_time_grids:
+            self.travel_time_grids.append(travel_time_grid)
+
+        return TravelTimeEnsemble(self.travel_time_grids)
+
+    def __iter__(self):
+        self.__i__ = 0
+        return self
+
+    def __next__(self):
+        if self.__i__ < len(self):
+            result = self.travel_time_grids[self.__i__]
+            self.__i__ += 1
+            return result
+        else:
+            raise StopIteration
+
+    def __repr__(self):
+        repr = f'Number of travel time grids: {len(self)}'
+
+    def select(self, seed_labels=None):
+        """
+        return the a list of grid corresponding to seed_labels.
+        :param seed_labels: seed labels of the travel time grids to return
+        :return: a list of travel time grids
+        :rtype: TravelTimeEnsemble
+        """
+
+        if seed_labels is None:
+            return self
+
+        returned_grids = []
+        for travel_time_grid in self.travel_time_grids:
+            if travel_time_grid.seed_label in seed_labels:
+                returned_grids.append(travel_time_grid)
+
+        return TravelTimeEnsemble(returned_grids)
+
+    def travel_time(self, seed, grid_coordinate=False,
+                    seed_labels=None, sort=True, ascending=True):
+        """
+        calculate the travel time at a specific point for a series of sensor
+        ids
+        :param seed: travel time seed
+        :param grid_coordinate:
+        :param seed_labels: a list of sensors from which to calculate the
+        travel time.
+        :param sorted: sort list if true
+        :type sorted: bool
+        :param ascending: sort in ascending order if true
+        :type ascending: bool
+        :return: a list of dictionary containing the travel time and sensor id
+        """
+
+        if not self.travel_time_grids[0].in_grid(seed):
+            raise ValueError('seed is outside the grid')
+
+        if grid_coordinate:
+            seed = self.travel_time_grids[0].transform_from(seed)
+
+        tt_grids = self.select(seed_labels=seed_labels)
+
+        tts = []
+        labels = []
+        for tt_grid in tt_grids:
+            labels.append(tt_grid.seed_label)
+            tts.append(tt_grid.interpolate(location, grid_coordinate=False))
+
+        if sort:
+            indices = np.argsort(tts, ascending=ascending)
+            tts = np.array(tts)[indices]
+            labels = np.array(labels)[indices]
+
+        return tt_dicts
+
+    def ray_tracer(self, start, seed_labels=None, multithreading=True,
+                    cpu_utilisation=0.9, grid_coordinate=True, max_iter=1000):
+        """
+
+        :param start:
+        :param grid_coordinate:
+        :param multithreading:
+        :param max_iter:
+        :param cpu_utilisation:
+        :param arrival_ids:
+        :return:
+        """
+
+        travel_time_grids = self.select(seed_labels=seed_labels)
+
+        # def ray_tracer_func(x, y):
+        #     ray_tracer(x, y, grid_coordinate=grid_coordinate,
+        #                max_iter=max_iter)
+
+        if multithreading:
+
+            kwargs = {'grid_coordinate': grid_coordinate,
+                      'max_iter': max_iter}
+
+            ray_tracer_func = partial(ray_tracer, **kwargs)
+
+            num_threads = int(np.ceil(cpu_utilisation * __cpu_count__))
+            # ensuring that the number of threads is comprised between 1 and
+            # __cpu_count__
+            num_threads = np.max([np.min([num_threads, __cpu_count__]), 1])
+
+            data = []
+            for travel_time_grid in travel_time_grids:
+                data.append((travel_time_grid, start))
+
+            with Pool(num_threads) as pool:
+                results = pool.starmap(ray_tracer_func, data)
+
+        else:
+            results = []
+            for travel_time_grid in travel_time_grids:
+                results.append(ray_tracer(travel_time_grid, start,
+                                          grid_coordinate=grid_coordinate,
+                                          max_iter=max_iter))
+
+        return results
+        # self, start, grid_coordinate = False, max_iter = 1000,
+        # arrival_id = None)
+
+    @property
+    def seeds(self):
+        seeds = []
+        for grid in self.travel_time_grids:
+            seeds.append(grid.seed)
+
+        return np.array(seeds)
+
+    @property
+    def seed_labels(self):
+        seed_labels = []
+        for grid in self.travel_time_grids:
+            seed_labels.append(grid.seed_label)
+
+        return np.array(seed_labels)
+
+
+
+
+
+
+
+
+
 
 
 class AngleGrid(SeededGrid):
