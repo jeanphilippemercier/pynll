@@ -11,6 +11,7 @@
 *.buf
 *.hdr
 *.mid
+*.obs
 
 # Linker output
 *.ilk
