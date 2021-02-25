@@ -36,7 +36,7 @@ from obspy import UTCDateTime
 from obspy.core import AttribDict
 
 from uquake.core.grid import read_grid
-from uquake.core.event import Arrival, Catalog, Origin
+from uquake.core.event import Arrival, Catalog, Origin, Event
 
 from uuid import uuid4
 
@@ -67,15 +67,15 @@ __valid_reference_ellipsoid__ = ['WGS-84', 'GRS-80', 'WGS-72', 'Australian',
 
 
 class Grid2Time:
-    def __init__(self, inventory, base_directory, base_name, verbosity=1,
-                 random_seed=1000, p_wave=True, s_wave=True,
+    def __init__(self, inventory, grid_transform, base_directory, base_name,
+                 verbosity=1, random_seed=1000, p_wave=True, s_wave=True,
                  calculate_angles=True, model_directory='models',
                  grid_directory='grids'):
         """
         Build the control file and run the Grid2Time program.
 
         Note that at this time the class does not support any geographic
-        transformation and assumes
+        transformation
 
         :param inventory: inventory file
         :type inventory: uquake.core.inventory.Inventory
@@ -179,6 +179,534 @@ class Grid2Time:
             ctrl.write(f'GT_PLFD 1.0e-4 {self.verbosity + 1}\n')
 
 
+class NonLinLoc:
+    def __init__(self, control, geographic_transformation, sensors,
+                 location_input_files, search_type,
+                 location_method, gaussian_model_error, search_grid,
+                 signature=None, comment=None, location_output_file_type=None,
+                 travel_time_model_error=None,
+                 phase_identifier_mapping=None,
+                 quality_to_error_mapping=None,
+                 phase_statistics_parameters=None,
+                 takeoff_angle_parameters=None,
+                 magnitude_calculation_method=None,
+                 magnitude_calculation_component=None,
+                 sensor_alias_code=None, exclude_observations=None,
+                 phase_time_delay=None,
+                 vertical_ray_elevation_correction=None,
+                 topography_mask=None, sensor_distribution_weighting=None):
+
+        """
+        create an object to run NonLinLoc
+        :param control: CONTROL - Sets various general program control
+        parameters.
+        :type control: Control
+        :param geographic_transformation: TRANS - Sets geographic to working
+        coordinates transformation parameters. The GLOBAL option sets
+        spherical regional/teleseismic mode, with no geographic transformation
+        - most position values are input and used directly as latitude and
+        longitude in degrees. The SIMPLE, SDC and LAMBERT options make
+        transformations of geographic coordinates into a Cartesian/rectangular
+        system. The NONE transformation performs no geographic conversion.
+        :type geographic_transformation: GeographicTransformation
+        :param sensors: GTSRCE - Source Description: Specifies a source
+        location. One time grid and one angles grid (if requested) will
+        be generated for each source. Four formats are supported:
+        XYZ (rectangular grid coordinates),
+        LATLON (decimal degrees for latitude/longitude),
+        LATLONDM (degrees + decimal minutes for latitude/longitude) and
+        LATLONDS (degrees + minutes + decimal seconds for latitude/longitude).
+        :param location_input_files: LOCFILES - Input and Output File Root Name
+        Specifies the directory path and filename for the phase/observation
+        files, and the file root names (no extension) for the input time grids
+        and the output files.
+        :param search_type: LOCSEARCH - Search Type: Specifies the search type
+        and search parameters. The possible search types are
+        GRID (grid search), MET (Metropolis), and OCT (Octtree).
+        :param location_method: LOCMETH - Location Method: Specifies the
+        location method (algorithm) and method parameters.
+        :param gaussian_model_error: LOCGAU - Gaussian Model Errors:
+        Specifies parameters for Gaussian modelisation-error covariances
+        Covariance ij between stations i and j using the relation
+        ( Tarantola and Valette, 1982 ):
+        Covariance ij = SigmaTime 2 exp(-0.5(Dist 2 ij )/ CorrLen 2 )
+        where Dist is the distance in km between stations i and j .
+        :param search_grid: LOCGRID - Search Grid Description: Specifies the
+        size and other parameters of an initial or nested 3D search grid.
+        The order of LOCGRID statements is critical (see Notes).
+
+        -- optional parameters
+
+        :param signature: LOCSIG - Signature text
+        :param comment: LOCCOM - Comment text
+        :param location_output_file_type: LOCHYPOUT - Output File Types:
+        Specifies the filetypes to be used for output.
+        :param travel_time_model_error: LOCGAU2 - Travel-Time Dependent Model
+        Errors: Specifies parameters for travel-time dependent
+        modelisation-error. Sets the travel-time error in proportion to the
+        travel-time, thus giving effectively a station-distance weighting,
+        which was not included in the standard Tarantola and Valette
+        formulation used by LOCGAU. This is important with velocity model
+        errors, because nearby stations would usually have less absolute error
+        than very far stations, and in general it is probably more correct
+        that travel-time error is a percentage of the travel-time. Preliminary
+        results using LOCGAU2 indicate that this way of setting travel-time
+        errors gives visible improvement in hypocenter clustering.
+        (can currently only be used with the EDT location methods)
+        :param phase_identifier_mapping: LOCPHASEID - Phase Identifier Mapping:
+        Specifies the mapping of phase codes in the phase/observation file
+        ( i.e. pg or Sn ) to standardized phase codes ( i.e. P or S ).
+        :param quality_to_error_mapping: LOCQUAL2ERR - Quality to Error Mapping
+        required, non-repeatable, for phase/observation file formats that do
+        not include time uncertainties ; ignored, non-repeatable, otherwise:
+        Specifies the mapping of phase pick qualities phase/observation file
+        (i.e. 0,1,2,3 or 4) to time uncertainties in seconds
+        (i.e. 0.01 or 0.5).
+        :param phase_statistics_parameters: LOCPHSTAT - Phase Statistics
+        parameters: Specifies selection criteria for phase residuals to be
+        included in calculation of average P and S station residuals.
+        The average residuals are saved to a summary, phase statistics file
+        (see Phase Statistics file formats ).
+        :param takeoff_angle_parameters: LOCANGLES - Take-off Angles parameters
+        Specifies whether to determine take-off angles for the maximum
+        likelihood hypocenter and sets minimum quality cutoff for saving angles
+        and corresponding phases to the HypoInverse Archive file.
+        :param magnitude_calculation_method: LOCMAG - Magnitude Calculation
+        Method: Specifies the magnitude calculation type and parameters.
+        The possible magnitude types are:
+        - ML_HB (Local (Richter) magnitudeMLfromHutton and Boore (1987)),
+          ML = log(A f) +nlog(r/100) +K(r-100) + 3.0 +S,
+        - MD_FMAG (Duration magnitudeMLfromLahr, J.C., (1989) HYPOELLIPSE),
+          MD = C1 + C2log(Fc) + C3r + C4z + C5[log(Fc))2,
+        :param magnitude_calculation_component: LOCCMP - Magnitude Calculation
+        Component
+        :param sensor_alias_code: LOCALIAS - Station Code Alias
+        Specifies (1) an alias (mapping) of station codes, and (2) start and
+        end dates of validity of the alias. Allows (1) station codes that vary
+        over time or in different pick files to be homogenized to match codes
+        in time grid files, and (2) allows selection of station data by time.
+        :param exclude_observations: LOCEXCLUDE - Exclude Observations
+        :param phase_time_delay: LOCDELAY - Phase Time Delays
+        Specifies P and S delays (station corrections) to be subtracted from
+        observed P and S times.
+        :param vertical_ray_elevation_correction: LOCELEVCORR -
+        Simple, vertical ray elevation correction:
+        Calculates a simple elevation correction using the travel-time of a
+        vertical ray from elev 0 to the elevation of the station. This control
+        statement is mean to be used in GLOBAL mode with TauP or other time
+        grids which use elevation 0 for the station elevation.
+        :param topography_mask: LOCTOPO_SURFACE - Topographic mask for location
+        search region:
+        Uses a topographic surface file in GMT ascii GRD format to mask prior
+        search volume to the half-space below the topography.
+        :param sensor_distribution_weighting: LOCSTAWT - Station distribution
+        weighting
+        Calculates a weight for each station that is a function of the average
+        distance between all stations used for location. This helps to correct
+        for irregular station distribution, i.e. a high density of stations in
+        regions such as Europe and North America and few or no stations in
+        regions such as oceans. The relative weight for station i is:
+        wieghti = 1.0 / [ SUMj exp(-dist2/cutoffDist2 ] where j is a station
+        used for location and dist is the epicentral/great-circle distance
+        between stations i and j.
+        """
+
+        if isinstance(control, Control):
+            raise TypeError('control must be a type Control object ')
+        self.control = control
+
+        if ((not isinstance(geographic_transformation,
+                            GeographicTransformation)) |
+            (not issubclass(geographic_transformation,
+                            GeographicTransformation))):
+            raise TypeError('geographic_transformation must be a class or '
+                            'subclass type GeographicTransformation')
+        self.geographic_transformation = geographic_transformation
+
+        if not isinstance(sensors, Sensors):
+            raise TypeError('sensors must be a type Sensors object')
+        self.sensors = sensors
+
+
+        self.location_input_files = location_input_files
+        self.location_output_files_type = location_output_file_type
+        self.search_type = search_type
+        self.location_method = location_method
+        self.gaussian_error_model = gaussian_model_error
+        self.quality_to_error_mapping = quality_to_error_mapping
+        self.search_grid = search_grid
+        self.signature = signature
+        self.comment = comment
+        self.travel_time_model_error = travel_time_model_error
+        self.phase_identifier_mapping = phase_identifier_mapping
+        self.phase_statistics_parameters = phase_statistics_parameters
+        self.takeoff_angle_parameters = takeoff_angle_parameters
+        self.magnitude_calculation_method = magnitude_calculation_method
+        self.magnitude_calculation_component = magnitude_calculation_component
+        self.sensor_alias_code = sensor_alias_code
+        self.exclude_observations = exclude_observations
+        self.phase_time_delay = phase_time_delay
+        self.vertical_ray_elevation_correction = \
+            vertical_ray_elevation_correction
+        self.topography_mask = topography_mask
+        self.sensor_distribution_weighting = sensor_distribution_weighting
+
+
+class Control:
+    def __init__(self, message_flag=-1, random_seed=1000):
+        """
+        Control section
+        :param message_flag: (integer, min:-1, default:1) sets the verbosity
+        level for messages printed to the terminal ( -1 = completely silent,
+        0 = error messages only, 1 = 0 + higher-level warning and progress
+        messages, 2 and higher = 1 + lower-level warning and progress
+        messages + information messages, ...)
+        :param random_seed:(integer) integer seed value for generating random
+        number sequences (used by program NLLoc to generate Metropolis samples
+        and by program Time2EQ to generate noisy time picks)
+        """
+        try:
+            self.message_flag=int(message_flag)
+        except Exception as e:
+            raise e
+
+        try:
+            self.random_seed=int(random_seed)
+        except Exception as e:
+            raise e
+
+    def __repr__(self):
+        return f'CONTROL {self.message_flag} {self.random_seed}'
+
+
+class LocSearchGrid:
+    def __init__(self, num_sample_draw=1000):
+        """
+
+        :param num_sample_draw: specifies the number of scatter samples to
+        draw from each saved PDF grid ( i.e. grid with gridType = PROB_DENSITY
+        and saveFlag = SAVE ) No samples are drawn if saveFlag < 0.
+        :type num_sample_draw: int
+        """
+        self.num_sample_draw = num_sample_draw
+
+    def __repr__(self):
+        return f'GRID {self.num_sample_draw}\n'
+
+    @property
+    def type(self):
+        return 'LOCSAERCH'
+
+
+class LocSearchMetropolis:
+    def __init__(self, num_samples, num_learn, num_equil, num_begin_save,
+                 num_skip, step_init, step_min, prob_min, step_fact=8.):
+        """
+        Container for the Metropolis Location algorithm parameters
+
+        The Metropolis-Gibbs algorithm performs a directed random walk within
+        a spatial, x,y,z volume to obtain a set of samples that follow the
+        3D PDF for the earthquake location. The samples give and estimate of
+        the optimal hypocenter and an image of the posterior probability
+        density function (PDF) for hypocenter location.
+
+        Advantages:
+
+        1. Does not require partial derivatives, thus can be used with
+        complicated, 3D velocity structures
+        2. Accurate recovery of moderately irregular (non-ellipsoidal)
+        PDF's with a single minimum
+        3. Only only moderately slower (about 10 times slower) than linearised,
+        iterative location techniques, and is much faster
+        (about 100 times faster) than the grid-search
+        4. Results can be used to obtain confidence contours
+
+        Drawbacks:
+
+        1. Stochastic coverage of search region - may miss important features
+        2. Inconsistent recovery of very irregular (non-ellipsoidal)
+        PDF's with multiple minima
+        3. Requires careful selection of sampling parameters
+        4. Attempts to read full 3D travel-time grid files into memory,
+        thus may run very slowly with large number of observations and large
+        3D travel-time grids
+
+        :param num_samples: total number of accepted samples to obtain (min:0)
+        :type num_samples: int
+        :param num_learn: number of accepted samples for learning stage of
+        search (min:0)
+        :type num_learn: int
+        :param num_equil: number of accepted samples for equilibration stage
+        of search (min:0)
+        :type num_equil: int
+        :param num_begin_save: number of accepted samples after which to begin
+        saving stage of search, denotes end of equilibration stage (min:0)
+        :type num_begin_save: int
+        :param num_skip: number of accepted samples to skip between saves
+        (numSkip = 1 saves every accepted sample, min:1)
+        :type num_skip: int
+        :param step_init: initial step size in km for the learning stage
+        (stepInit < 0.0 gives automatic step size selection. If the search
+        takes too long, the initial step size may be too large;
+        this may be the case if the search region is very large relative
+        to the volume of the high confidence region for the locations.)
+        :type step_init: float
+        :param step_min: minimum step size allowed during any search stage
+        (This parameter should not be critical, set it to a low value. min:0)
+        :type step_min: float
+        :param prob_min: minimum value of the maximum probability (likelihood)
+        that must be found by the end of learning stage, if this value is not
+        reached the search is aborted (This parameters allows the filtering of
+        locations outside of the search grid and locations with large
+        residuals.)
+        :type prob_min: float
+        :param step_fact: step factor for scaling step size during
+        equilibration stage (Try a value of 8.0 to start.) Default=8.
+        :type step_fact: float
+        """
+
+        self.num_samples = num_samples
+        self.num_learn = num_learn
+        self.num_equil = num_equil
+        self.num_begin_save = num_begin_save
+        self.num_skip = num_skip
+        self.step_init = step_init
+        self.step_min = step_min
+        self.prob_min = prob_min
+        self.step_fact = step_fact
+
+    def __repr__(self):
+        line = f'LOCSEARCH MET {self.num_samples} {self.num_learn} ' \
+               f'{self.num_equil} {self.num_begin_save} {self.num_skip} ' \
+               f'{self.step_min} {self.step_min} {self.step_fact} ' \
+               f'{self.prob_min}\n'
+
+        return line
+
+    @classmethod
+    def init_with_default(cls):
+        pass
+
+    @property
+    def type(self):
+        return 'LOCSAERCH'
+
+
+class LocSearchOctTree:
+    def __init__(self, init_num_cell_x, init_num_cell_y, init_num_cell_z,
+                 min_node_size, max_node_size, num_scatter,
+                 use_station_density=False, stop_on_min_node_size=True):
+        """
+        Container for the Octree Location algorithm parameters
+
+        Documenation: http://alomax.free.fr/nlloc/octtree/OctTree.html
+
+        Developed in collaboration with Andrew Curtis; Schlumberger Cambridge
+        Research, Cambridge CB3 0EL, England; curtis@cambridge.scr.slb.com
+
+        The oct-tree importance sampling algorithm gives accurate, efficient
+        and complete mapping of earthquake location PDFs in 3D space (x-y-z).
+
+        Advantages:
+
+        1. Much faster than grid-search (factor 1/100)
+        2. More global and complete than Metropolis-simulated annealing
+        3. Simple, with very few parameters (initial grid size, number of samples)
+
+        Drawbacks:
+
+        1. Results are weakly dependant on initial grid size - the method may
+        not identify narrow, local maxima in the PDF.
+        2. Attempts to read full 3D travel-time grid files into memory,
+        thus may run very slowly with large number of observations and large
+        3D travel-time grids
+
+        :param init_num_cell_x: initial number of octtree cells in the x
+        direction
+        :type init_num_cell_x: int
+        :param init_num_cell_y: initial number of octtree cells in the y
+        direction
+        :type init_num_cell_y: int
+        :param init_num_cell_z: initial number of octtree cells in the z
+        direction
+        :type init_num_cell_z: int
+        :param min_node_size: smallest octtree node side length to process,
+        the octree search is terminated after a node with a side smaller
+        than this length is generated
+        :type min_node_size: float
+        :param max_node_size: total number of nodes to process
+        :type max_node_size: int
+        :param num_scatter: the number of scatter samples to draw from the
+        octtree results
+        :type num_scatter: int
+        :param use_station_density: flag, if True weights oct-tree cell
+        probability values used for subdivide decision in proportion to number
+        of stations in oct-tree cell; gives higher search priority to cells
+        containing stations, stablises convergence to local events when global
+        search used with dense cluster of local stations
+        (default:False)
+        :type use_station_density: bool
+        :param stop_on_min_node_size: flag, if True, stop search when first
+        min_node_size reached, if False stop subdividing a given cell when
+        min_node_size reached (default:True)
+        :type stop_on_min_node_size: bool
+        """
+
+        self.init_num_cell_x = init_num_cell_x
+        self.init_num_cell_y = init_num_cell_y
+        self.init_num_cell_z = init_num_cell_z
+        self.min_node_size = min_node_size
+        self.max_node_size = max_node_size
+        self.num_scatter = num_scatter
+        self.use_station_density = use_station_density
+        self.stop_on_min_node_size = stop_on_min_node_size
+
+    def __repr__(self):
+        line = f'LOCSEARCH OCT {self.init_num_cell_x} ' \
+               f'{self.init_num_cell_y} {self.init_num_cell_z} ' \
+               f'{self.min_node_size} {self.max_num_nodes} ' \
+               f'{self.num_scatter} {self.use_station_density:d} ' \
+               f'{self.stop_on_min_node_size:d}\n'
+
+        return line
+
+    @property
+    def type(self):
+        return 'LOCSEARCH'
+
+
+class Observations:
+    def __init__(self, picks, p_pick_error=1e-3, s_pick_error=1e-3):
+        """
+
+        :param picks: a list of pick object
+        :type picks: list of uquake.core.event.pick
+        :param p_pick_error: p-wave picking error in second
+        :param s_pick_error: s-wave picking error in second
+        """
+
+        self.picks = picks
+        self.p_pick_error = p_pick_error
+        self.s_pick_error = s_pick_error
+
+    @classmethod
+    def from_event(cls, event, p_pick_error=1e-3, s_pick_error=1e-3,
+                   origin_index=None):
+
+        if type(event) is Catalog:
+            event = event[0]
+            logger.warning('An object type Catalog was provided. Taking the '
+                           'first event of the catalog. This may lead to '
+                           'unwanted behaviour')
+
+        if origin_index is None:
+            if event.preferred_origin() is None:
+                logger.warning('The preferred origin is not defined. The last'
+                               'inserted origin will be use. This may lead '
+                               'to unwanted behaviour')
+
+                origin = event.origins[-1]
+            else:
+                origin = event.preferred_origin()
+        else:
+            origin = event.origins[origin_index]
+
+        picks = [arrival.get_pick() for arrival in origin.arrivals]
+
+        return cls(picks, p_pick_error=p_pick_error,
+                   s_pick_error=s_pick_error)
+
+    def __repr__(self):
+
+        lines = ''
+        for pick in self.picks:
+            if pick.evaluation_status == 'rejected':
+                continue
+
+            sensor = pick.sensor
+            instrument_identification = pick.waveform_id.channel_code[0:2]
+            component = pick.waveform_id.channel_code[-1]
+            phase_onset = 'e' if pick.onset in ['emergent', 'questionable'] \
+                else 'i'
+            phase_descriptor = pick.phase_hint.upper()
+            if pick.polarity is None:
+                first_motion = '?'
+            else:
+                first_motion = 'U' if pick.polarity.lower() == 'positive' \
+                    else 'D'
+            datetime_str = pick.time.strftime('%Y%m%d %H%M %S.%f')
+
+            error_type = 'GAU'
+            if pick.phase_hint.upper() == 'P':
+                pick_error = f'{self.p_pick_error:0.2e}'
+            else:
+                pick_error = f'{self.s_pick_error:0.2e}'
+
+            # not implemented
+            coda_duration = -1
+            amplitude = -1
+            period = -1
+            phase_weight = 1
+
+            line = f'{sensor:<6s} {instrument_identification:<4s} ' \
+                   f'{component:<4s} {phase_onset:1s} ' \
+                   f'{phase_descriptor:<6s} {first_motion:1s} ' \
+                   f'{datetime_str} {error_type} {pick_error} ' \
+                   f'{coda_duration:.2e} {amplitude:.2e} {period:.2e} ' \
+                   f'{phase_weight:d}\n'
+
+            lines += line
+
+        return lines
+
+    def gen_observations_from_event(self, event):
+        """
+        Create NLLoc compatible observation file from an uquake event
+        catalog file.
+        input:
+
+        :param event: event containing a preferred origin with arrivals
+        referring to picks
+        :type event: ~uquake.core.event.Event
+        """
+
+        fname = 'gen_observations_from_event'
+
+        with open('%s/%s/obs/%s.obs' % (
+        self.base_folder, self.worker_folder,
+        self.base_name), 'w') as out_file:
+            po = event.preferred_origin()
+            logger.debug(
+                '%s.%s: pref origin=[%s]' % (__name__, fname, po))
+
+            if not po:
+                logger.error('preferred origin is not set')
+
+            for arr in po.arrivals:
+
+                pk = arr.pick_id.get_referred_object()
+                # logger.debug(pk)
+                if pk.evaluation_status == 'rejected':
+                    continue
+
+                date_str = pk.time.strftime('%Y%m%d %H%M %S.%f')
+
+                if pk.phase_hint == 'P':
+                    pick_error = '1.00e-03'
+                else:
+                    pick_error = '1.00e-03'
+
+                polarity = 'U' if pk.polarity == 'positive' else 'D'
+
+                out_file.write(
+                    '%s ?    ?    ?    %s %s %s GAU'
+                    ' %s -1.00e+00 -1.00e+00 -1.00e+00\n' % (
+                        pk.waveform_id.station_code.ljust(6),
+                        pk.phase_hint.ljust(6), polarity, date_str,
+                        pick_error))
+        return event
+
+
 class GridTimeFiles:
     def __init__(self, velocity_file_path, travel_time_file_path, p_wave=True,
                  swap_bytes_on_input=False):
@@ -240,103 +768,148 @@ class GridTimeMode:
         return f'GTMODE {self.grid_mode} {self.angle_mode}'
 
 
-class GridTypeSensors:
-    def __init__(self, inventory):
+class Sensors:
+    def __init__(self, sensors):
         """
         specifies a series of source location from an inventory object
-        :param inventory: inventory object
-        :type inventory: uquake.core.inventory.Inventory
+        :param sensors: inventory object
+        :type sensors: list of uquake.core.inventory.Sensors
         """
 
-        self.inventory = inventory
+        self.sensors = sensors
+
+    @classmethod
+    def from_inventory(cls, inventory):
+        """
+        create from an inventory object
+        :param inventory: uquake.core.inventory.Inventory
+        :return: a Sensors object
+        :rtype: Sensors
+        """
+
+        sensors = inventory.sensors
+        return cls(sensors)
 
     def __repr__(self):
-        txt = ""
+        line = ""
         for sensor in self.inventory.sensors:
 
             # test if sensor name is shorter than 6 characters
 
-            txt += f'GTSRCE {sensor.code} XYZ ' \
-                   f'{sensor.x:>10.2f} ' \
-                   f'{sensor.y:>10.2f} ' \
-                   f'{sensor.z:>10.2f} ' \
-                   f'0.00\n'
+            line += f'GTSRCE {sensor.code} XYZ ' \
+                    f'{sensor.x:>10.2f} ' \
+                    f'{sensor.y:>10.2f} ' \
+                    f'{sensor.z:>10.2f} ' \
+                    f'0.00\n'
 
-        return txt
+        return line
 
 
-class Control:
-    def __init__(self, message_flag=-1, random_seed=1000):
+__observation_file_types__ = ['NLLOC_OBS', 'HYPO71', 'HYPOELLIPSE',
+                              'NEIC', 'CSEM_ALERT', 'SIMULPS', 'HYPOCENTER',
+                              'HYPODD', 'SEISAN', 'NORDIC', 'NCSN_Y2K_5',
+                              'NCEDC_UCB', 'ETH_LOC', 'RENASS_WWW',
+                              'RENASS_DEP', 'INGV_BOLL', 'INGV_BOLL_LOCAL',
+                              'INGV_ARCH']
+
+
+class InputFiles:
+    def __init__(self, observation_files, travel_time_file_root,
+                 output_file_root, observation_file_type='NLLOC_OBS',
+                 i_swap_bytes=False, create_missing_folders=True):
         """
-        Control section
-        :param message_flag: (integer, min:-1, default:1) sets the verbosity
-        level for messages printed to the terminal ( -1 = completely silent,
-        0 = error messages only, 1 = 0 + higher-level warning and progress
-        messages, 2 and higher = 1 + lower-level warning and progress
-        messages + information messages, ...)
-        :param random_seed:(integer) integer seed value for generating random
-        number sequences (used by program NLLoc to generate Metropolis samples
-        and by program Time2EQ to generate noisy time picks)
-        """
-        try:
-            self.message_flag=int(message_flag)
-        except Exception as e:
-            raise e
+        Specifies the directory path and filename for the phase/observation
+        files, and the file root names (no extension) for the input time grids
+        and the output files.
 
-        try:
-            self.random_seed=int(random_seed)
-        except Exception as e:
-            raise e
+        the path where the files are to be located is
+
+        :param observation_files: full or relative path and name for
+        phase/observations files, mulitple files may be specified with
+        standard UNIX "wild-card" characters ( * and ? )
+        :type observation_files: str
+        :param observation_file_type: (choice: NLLOC_OBS HYPO71 HYPOELLIPSE
+        NEIC CSEM_ALERT SIMULPS HYPOCENTER HYPODD SEISAN NORDIC NCSN_Y2K_5
+        NCEDC_UCB ETH_LOC RENASS_WWW RENASS_DEP INGV_BOLL
+        INGV_BOLL_LOCAL INGV_ARCH) format type for phase/observations files
+        (see Phase File Formats) - DEFAULT NLLOC_OBS
+        :type observation_file_type: str
+        :param travel_time_file_root: full or relative path and file root name
+        (no extension) for input time grids (generated by program Grid2Time,
+        edu.sc.seis.TauP.TauP_Table_NLL, or other software.
+        :type travel_time_file_root: str
+        :param output_file_root: full or relative path and file root name
+        (no extension) for output files
+        :type output_file_root: str
+        :param i_swap_bytes: flag to indicate if hi and low bytes of input
+        time grid files should be swapped. Allows reading of travel-time grids
+        from different computer architecture platforms during TRANS GLOBAL mode
+        location. DEFAULT=False
+        :type i_swap_bytes: bool
+        :param create_missing_folders: if True missing folder will be created
+        """
+
+        # validate if the path exist if the path does not exist the path
+        # should be created
+        observation_files = Path(observation_files)
+        if not observation_files.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{observation_files.parent}> does '
+                               f'not exist. missing folders will be created')
+                observation_files.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{observation_files.parent}> does not '
+                              f'exist')
+
+        self.observation_files = observation_files
+
+        travel_time_file_root = Path(travel_time_file_root)
+        if not travel_time_file_root.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{travel_time_file_root.parent}> '
+                               f'does not exist. missing folders will '
+                               f'be created')
+
+                travel_time_file_root.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{travel_time_file_root.parent}> does '
+                              f'not exist')
+
+        self.travel_time_file_root = travel_time_file_root
+
+        output_file_root = Path(output_file_root)
+
+        if not output_file_root.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{output_file_root.parent}> '
+                               f'does not exist. missing folders will '
+                               f'be created')
+
+                output_file_root.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{output_file_root.parent}> does '
+                              f'not exist')
+
+        self.output_file_root = output_file_root
+
+        validate(observation_file_type, __observation_file_types__)
+        self.observation_file_type = observation_file_type
+
+        self.i_swap_bytes = i_swap_bytes
 
     def __repr__(self):
-        return f'CONTROL {self.message_flag} {self.random_seed}'
+        line = f'LOCFILES {self.observation_Files} ' \
+               f'{self.observation_file_type} {self.travel_time_file_root} ' \
+               f'{self.output_file_root} {self.i_swap_bytes}\n'
 
 
-class ControlFile:
-    def __init__(self, message_flag=-1, random_seed=1000):
-        """
-        Control section of the NLL control file
-        :param message_flag: (integer, min:-1, default:1) sets the verbosity
-        level for messages printed to the terminal
-        ( -1 = completely silent, 0 = error messages only, 1 = 0 +
-        higher-level warning and progress messages, 2 and higher = 1 +
-        lower-level warning and progress messages + information messages, ...)
 
-        :param random_seed: (integer) integer seed value for generating random
-        number sequences (used by program NLLoc to generate Metropolis samples
-        and by program Time2EQ to generate noisy time picks)
-        """
-        # set default values for the generic control statement parameters
-        self.control = {'message_flag': -1,
-                        'random_seed': 1000}
 
-        self.geographic_transformation = {'transformation' : 'NONE',
-                                          'latitude_origin': None,
-                                          'longitude_origin': None,
-                                          'rotation_angle': None,
-                                          'reference_ellipsoid': None,
-                                          'first_standard_parallax': None,
-                                          'second_standard_parallax': None}
-
-        self.vel2grid = {'output_file_root_name' : None,
-                         'phase': None}
-
-        # a grid should be added
-        self.grid = None
-
-    def __setattr__(self, key, value):
-        if key not in self.__dict__.keys():
-            raise AttributeError(f'{key} is not a valid attribute')
-        self.__dict__['key'] = value
-
-    def __str__(self):
-        return f'CONTROL {self.message_flag} {self.random_seed}\n'
-
-    def __repr__(self):
-        return self.__str__()
 
 
 class GeographicTransformation:
+    type = 'GeographicTransformation'
+
     def __init__(self, transformation='NONE'):
         validate(transformation, __valid_geographic_transformation__)
         self.transformation = transformation

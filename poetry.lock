@@ -950,7 +950,7 @@ python-versions = ">=3.5"
 
 [[package]]
 name = "shtab"
-version = "1.3.4"
+version = "1.3.5"
 description = "Automatically generate shell tab completion scripts for python CLI apps"
 category = "main"
 optional = false
@@ -994,7 +994,7 @@ pymysql = ["pymysql (<1)", "pymysql"]
 
 [[package]]
 name = "tabulate"
-version = "0.8.8"
+version = "0.8.9"
 description = "Pretty-print tabular data"
 category = "main"
 optional = false
@@ -1055,7 +1055,7 @@ python-versions = "*"
 
 [[package]]
 name = "uquake"
-version = "0.2.7"
+version = "0.2.12"
 description = "extension of the ObsPy library for local seismicity"
 category = "main"
 optional = false
@@ -1154,7 +1154,7 @@ test = ["zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "c27ee4739292710ab47d38e5e2f328ebac83cbbe02a2e7ec100fefd487bebef5"
+content-hash = "aea559e1a9070b3e820fa3acdf4137e51909d9bfa15e403faa86d1044c65699d"
 
 [metadata.files]
 appdirs = [
@@ -1766,8 +1766,8 @@ shortuuid = [
     {file = "shortuuid-1.0.1.tar.gz", hash = "sha256:3c11d2007b915c43bee3e10625f068d8a349e04f0d81f08f5fa08507427ebf1f"},
 ]
 shtab = [
-    {file = "shtab-1.3.4-py2.py3-none-any.whl", hash = "sha256:aa392d1cdfa9dfd047887bed1be0bd0c99cba77851848a36bc175093e582a462"},
-    {file = "shtab-1.3.4.tar.gz", hash = "sha256:353f2a3a5178cd2df8eb746e7ab26a5039a9989e4386de8fd239d8c1653a8887"},
+    {file = "shtab-1.3.5-py2.py3-none-any.whl", hash = "sha256:540ee72e1d1dc1c1ef72b8d168f5f4f85738eae56c0cededaf814f5a3a548c60"},
+    {file = "shtab-1.3.5.tar.gz", hash = "sha256:3e7880f2778b659f4f01af07ab7b815b2786c257efa8ec52d6057e06a398a103"},
 ]
 six = [
     {file = "six-1.15.0-py2.py3-none-any.whl", hash = "sha256:8b74bedcbbbaca38ff6d7491d76f2b06b3592611af620f8426e82dddb04a5ced"},
@@ -1818,8 +1818,8 @@ sqlalchemy = [
     {file = "SQLAlchemy-1.3.23.tar.gz", hash = "sha256:6fca33672578666f657c131552c4ef8979c1606e494f78cd5199742dfb26918b"},
 ]
 tabulate = [
-    {file = "tabulate-0.8.8-py3-none-any.whl", hash = "sha256:d6fe298fc0a58d848d6160118d17e70905f36766552ee78f8a1f4d64e8e16916"},
-    {file = "tabulate-0.8.8.tar.gz", hash = "sha256:26f2589d80d332fefd2371d396863dedeb806f51b54bdb4b264579270b621e92"},
+    {file = "tabulate-0.8.9-py3-none-any.whl", hash = "sha256:d7c013fe7abbc5e491394e10fa845f8f32fe54f8dc60c6622c6cf482d25d47e4"},
+    {file = "tabulate-0.8.9.tar.gz", hash = "sha256:eb1d13f25760052e8931f2ef80aaf6045a6cceb47514db8beab24cded16f13a7"},
 ]
 text-unidecode = [
     {file = "text-unidecode-1.3.tar.gz", hash = "sha256:bad6603bb14d279193107714b288be206cac565dfa49aa5b105294dd5c4aab93"},
@@ -1843,8 +1843,8 @@ typing-extensions = [
     {file = "typing_extensions-3.7.4.3.tar.gz", hash = "sha256:99d4073b617d30288f569d3f13d2bd7548c3a7e4c8de87db09a9d29bb3a4a60c"},
 ]
 uquake = [
-    {file = "uquake-0.2.7-py3-none-any.whl", hash = "sha256:38fd26c9f67cd0fae5fd37992d92a2b7a730556c3e730f18963542d55fbe7d19"},
-    {file = "uquake-0.2.7.tar.gz", hash = "sha256:75b82612b42db4b1908b0d2e388a3f2035c57c4bcce7eecd43b019b8829f0294"},
+    {file = "uquake-0.2.12-py3-none-any.whl", hash = "sha256:a835ec9454d32c9c0d7eb9e18335d8c607628343479751acd322a1840bf5e1f9"},
+    {file = "uquake-0.2.12.tar.gz", hash = "sha256:d9ba8b30bf2bb77672052e0e8816cf371d61c35b3db4935d5f8889d59d872033"},
 ]
 urllib3 = [
     {file = "urllib3-1.26.3-py2.py3-none-any.whl", hash = "sha256:1b465e494e3e0d8939b50680403e3aedaa2bc434b7d5af64dfd3c958d7f5ae80"},

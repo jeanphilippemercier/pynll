@@ -611,8 +611,8 @@ class SeededGrid(NLLocGrid):
                          float_type=float_type, model_id=model_id)
 
     def __repr__(self):
-        repr = f'{self.seed_label}: {self.seed}\n'
-        return repr
+        line = f'{self.seed_label}: {self.seed}\n'
+        return line
 
     def base_name(self):
         base_name = f'{self.network_code}.{self.phase}.{self.seed_label}.' \
@@ -715,63 +715,15 @@ class TTGrid(SeededGrid):
         :rtype: numpy.array
         """
 
-        from uquake.core.event import Ray
-
-        if grid_coordinate:
-            start = np.array(start)
-            start = self.transform_from(start)
-
-        origin = self.origin
-        spacing = self.spacing
-        end = np.array(self.seed)
-        start = np.array(start)
-
-        # calculating the gradient in every dimension at every grid points
-        gds = [Grid(gd, origin=origin, spacing=spacing)
-               for gd in np.gradient(self.data)]
-
-        dist = np.linalg.norm(start - end)
-        cloc = start  # initializing cloc "current location" to start
-        gamma = spacing / 2  # gamma is set to half the grid spacing. This
-        # should be
-        # sufficient. Note that gamma is fixed to reduce
-        # processing time.
-        nodes = [start]
-
-        iter_number = 0
-        while np.all(dist > spacing / 2):
-            if iter_number > max_iter:
-                break
-
-            if np.all(dist < spacing * 4):
-                gamma = np.min(spacing) / 4
-
-            gvect = np.array([gd.interpolate(cloc, grid_coordinate=False,
-                                             order=1)[0] for gd in gds])
-
-            cloc = cloc - gamma * gvect / np.linalg.norm(gvect)
-            nodes.append(cloc)
-            dist = np.linalg.norm(cloc - end)
-
-            iter_number += 1
-
-        nodes.append(end)
-
-        tt = self.interpolate(start, grid_coordinate=False, order=1)
-        az = self.to_azimuth_point(start, grid_coordinate=False,
-                                   order=1)
-        toa = self.to_takeoff_point(start, grid_coordinate=False,
-                                    order=1)
-
-        ray = Ray(nodes=nodes, station_code=self.seed_label,
-                  arrival_id=arrival_id, phase=self.phase,
-                  azimuth=az, takeoff_angle=toa, travel_time=tt)
-
-        return ray
+        return ray_tracer(self.data, start, grid_coordinate=grid_coordinate,
+                          max_iter=max_iter, arrival_id=arrival_id)
 
     @classmethod
     def from_velocity(cls, seed, seed_label, velocity_grid):
         return velocity_grid.eikonal(seed, seed_label)
+
+    def write(self, path='.'):
+        return super().write(self.base_name, path=path)
 
 
 def ray_tracer(travel_time_grid, start, grid_coordinate=False, max_iter=1000,
@@ -780,6 +732,8 @@ def ray_tracer(travel_time_grid, start, grid_coordinate=False, max_iter=1000,
     This function calculates the ray between a starting point (start) and an
     end point, which should be the seed of the travel_time grid, using the
     gradient descent method.
+    :param travel_time_grid: a travel time grid
+    :type travel_time_grid: TTGrid
     :param start: the starting point (usually event location)
     :type start: tuple, list or numpy.array
     :param grid_coordinate: true if the coordinates are expressed in
@@ -881,8 +835,20 @@ class TravelTimeEnsemble:
         else:
             raise StopIteration
 
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self.travel_time_grids[item]
+        if isinstance(item, str):
+            tt_grid_out = None
+            for travel_time_grid in self.travel_time_grids:
+                if travel_time_grid.seed_label == item:
+                    return travel_time_grid
+
+            raise KeyError(f'{item} not found')
+
     def __repr__(self):
-        repr = f'Number of travel time grids: {len(self)}'
+        line = f'Number of travel time grids: {len(self)}'
+        return line
 
     def select(self, seed_labels=None):
         """
@@ -908,11 +874,13 @@ class TravelTimeEnsemble:
         calculate the travel time at a specific point for a series of sensor
         ids
         :param seed: travel time seed
-        :param grid_coordinate:
+        :param grid_coordinate: true if the coordinates are expressed in
+        grid space (indices can be fractional) as opposed to model space
+        (x, y, z)
         :param seed_labels: a list of sensors from which to calculate the
         travel time.
-        :param sorted: sort list if true
-        :type sorted: bool
+        :param sort: sort list if true
+        :type sort: bool
         :param ascending: sort in ascending order if true
         :type ascending: bool
         :return: a list of dictionary containing the travel time and sensor id
@@ -930,33 +898,37 @@ class TravelTimeEnsemble:
         labels = []
         for tt_grid in tt_grids:
             labels.append(tt_grid.seed_label)
-            tts.append(tt_grid.interpolate(location, grid_coordinate=False))
+            tts.append(tt_grid.interpolate(seed, grid_coordinate=False))
 
         if sort:
             indices = np.argsort(tts, ascending=ascending)
             tts = np.array(tts)[indices]
             labels = np.array(labels)[indices]
 
+        tt_dicts = {'travel_times': tts,
+                    'labels': labels}
+
         return tt_dicts
 
     def ray_tracer(self, start, seed_labels=None, multithreading=True,
-                    cpu_utilisation=0.9, grid_coordinate=True, max_iter=1000):
+                   cpu_utilisation=0.9, grid_coordinate=True, max_iter=1000):
         """
 
-        :param start:
-        :param grid_coordinate:
-        :param multithreading:
-        :param max_iter:
-        :param cpu_utilisation:
-        :param arrival_ids:
-        :return:
+        :param start: origin of the ray, usually the location of an event
+        :param seed_labels: a list of seed labels
+        :param grid_coordinate: true if the coordinates are expressed in
+        grid space (indices can be fractional) as opposed to model space
+        (x, y, z)
+        :param multithreading: if True use multithreading
+        :param max_iter: maximum number of iteration
+        :param cpu_utilisation: fraction of core to use, between 0 and 1.
+        The number of core to be use is bound between 1 and the total number of
+        cores
+        :return: a list of ray
+        :rtype: list
         """
 
         travel_time_grids = self.select(seed_labels=seed_labels)
-
-        # def ray_tracer_func(x, y):
-        #     ray_tracer(x, y, grid_coordinate=grid_coordinate,
-        #                max_iter=max_iter)
 
         if multithreading:
 
@@ -985,8 +957,6 @@ class TravelTimeEnsemble:
                                           max_iter=max_iter))
 
         return results
-        # self, start, grid_coordinate = False, max_iter = 1000,
-        # arrival_id = None)
 
     @property
     def seeds(self):
@@ -1004,14 +974,9 @@ class TravelTimeEnsemble:
 
         return np.array(seed_labels)
 
-
-
-
-
-
-
-
-
+    def write(self, path='.'):
+        for travel_time_grid in self.travel_time_grids:
+            travel_time_grid.write(path=path)
 
 
 class AngleGrid(SeededGrid):
