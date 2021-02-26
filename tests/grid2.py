@@ -1,6 +1,6 @@
 from time import time
 from loguru import logger
-from .fixtures.travel_time_grids import travel_time_grids
+from .fixtures.grids import travel_time_grids
 import numpy as np
 
 

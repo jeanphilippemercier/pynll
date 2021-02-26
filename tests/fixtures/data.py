@@ -3,6 +3,7 @@ from uquake.core.event import read_events
 from uquake.core.stream import read
 from pytest import fixture
 import os
+from time import time
 
 test_artifacts = os.environ['UQUAKE_TEST_ARTIFACTS']
 
@@ -62,7 +63,7 @@ def waveform(inventory):
     return get_waveform()
 
 
-@pytest.fixture
+@fixture
 def travel_time_grids():
     t0 = time()
     travel_time_grids_s = vel_3d_s.to_time_multi_threaded(seeds, seed_labels)

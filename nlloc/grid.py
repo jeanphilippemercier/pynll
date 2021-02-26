@@ -57,12 +57,13 @@ valid_float_types = {
 valid_grid_units = (
     'METER',
     'KILOMETER',
-    'SECOND',
-    'DEGREE'
 )
 
 __velocity_grid_location__ = Path('model')
 __time_grid_location__ = Path('time')
+
+__default_grid_units__ = 'METER'
+__default_float_type__ = 'FLOAT'
 
 
 def validate_phase(phase):
@@ -107,17 +108,104 @@ def validate_float_type(float_type):
     return True
 
 
+def read_grid(base_name, path='.', float_type=__default_float_type__):
+    """
+    read two parts NLLoc files
+    :param base_name:
+    :param path: location of grid files
+    :param float_type: float type as defined in NLLoc grid documentation
+    """
+    header_file = Path(path) / f'{base_name}.hdr'
+    with open(header_file, 'r') as in_file:
+        line = in_file.readline()
+        line = line.split()
+        shape = tuple([int(line[0]), int(line[1]), int(line[2])])
+        origin = np.array([float(line[3]), float(line[4]),
+                           float(line[5])]) * 1000
+        spacing = np.array([float(line[6]), float(line[7]),
+                            float(line[8])]) * 1000
+
+        grid_type = line[9]
+        grid_unit = 'METER'
+
+        line = in_file.readline()
+
+        if grid_type in ['ANGLE', 'ANGLE2D', 'TIME', 'TIME2D']:
+            line = line.split()
+            seed_label = line[0]
+            seed = (float(line[1]) * 1000,
+                    float(line[2]) * 1000,
+                    float(line[3]) * 1000)
+
+        else:
+            seed_label = None
+            seed = None
+
+    buf_file = Path(path) / f'{base_name}.buf'
+    if float_type == 'FLOAT':
+        data = np.fromfile(buf_file,
+                           dtype=np.float32)
+    elif float_type == 'DOUBLE':
+        data = np.fromfile(buf_file,
+                           dtype=np.float64)
+    else:
+        msg = f'float_type = {float_type} is not valid\n' \
+              f'float_type should be one of the following valid float ' \
+              f'types:\n'
+        for valid_float_type in valid_float_types:
+            msg += f'{valid_float_type}\n'
+        raise ValueError(msg)
+
+    data = data.reshape(shape)
+
+    if '.P.' in base_name:
+        phase = 'P'
+    else:
+        phase = 'S'
+
+    # reading the model id file
+    mid_file = Path(path) / f'{base_name}.mid'
+    if mid_file.exists():
+        with open(mid_file, 'r') as mf:
+            model_id = mf.readline().strip()
+
+    else:
+        model_id = str(uuid4())
+
+        # (self, base_name, data_or_dims, origin, spacing, phase,
+        #  seed=None, seed_label=None, value=0,
+        #  grid_type='VELOCITY_METERS', grid_units='METER',
+        #  float_type="FLOAT", model_id=None):
+
+    network_code = base_name.split('.')[0]
+    if grid_type in ['VELOCITY', 'VELOCITY_METERS']:
+        return VelocityGrid3D(network_code, data, origin, spacing, phase=phase,
+                              model_id=model_id)
+
+    elif grid_type == 'TIME':
+        return TTGrid(network_code, data, origin, spacing, seed,
+                      seed_label, phase=phase, model_id=model_id)
+
+    elif grid_type == 'ANGLE':
+        return AngleGrid(network_code, data, origin, spacing, seed,
+                         seed_label, angle_type='AZIMUTH', phase=phase,
+                         model_id=model_id)
+
+    else:
+        return NLLocGrid(data, origin, spacing, phase,
+                         grid_type=grid_type, model_id=model_id,
+                         grid_units=grid_unit)
+
+
 class NLLocGrid(Grid):
     """
     base 3D rectilinear grid object
     """
     def __init__(self, data_or_dims, origin, spacing, phase,
-                 value=0, grid_type='VELOCITY_METERS', grid_units='METER',
+                 value=0, grid_type='VELOCITY_METERS',
+                 grid_units=__default_grid_units__,
                  float_type="FLOAT", model_id=None):
         """
-
-        :param base_name: file base name
-        :type base_name: str
         :param data_or_dims: data or data dimensions. If dimensions are
         provided the a homogeneous gris is created with value=value
         :param origin: origin of the grid
@@ -126,14 +214,16 @@ class NLLocGrid(Grid):
         :type spacing: list
         :param phase: the seismic phase (value 'P' or 'S')
         :type phase: str
-        :param seed: seed of the grid (for travel-time grid only)
-        :type seed: numpy.array
-        :param seed_label:
         :param value:
+        :type value: float
         :param grid_type:
+        :type grid_type: str
         :param grid_units:
+        :type grid_units: str
         :param float_type:
+        :type float_type: str
         :param model_id:
+        :type model_id: str
         """
 
         super().__init__(data_or_dims, spacing=spacing, origin=origin,
@@ -162,80 +252,6 @@ class NLLocGrid(Grid):
         if validate_float_type(float_type):
             self.float_type = float_type.upper()
 
-    @classmethod
-    def from_file(cls, base_name, path='.', float_type='FLOAT', phase='P'):
-        """
-        read two parts NLLoc files
-        :param base_name:
-        :param path: location of grid files
-        :param float_type: float type as defined in NLLoc grid documentation
-        """
-        header_file = Path(path) / f'{base_name}.hdr'
-        with open(header_file, 'r') as in_file:
-            line = in_file.readline()
-            line = line.split()
-            shape = tuple([int(line[0]), int(line[1]), int(line[2])])
-            origin = np.array([float(line[3]), float(line[4]),
-                                     float(line[5])]) * 1000
-            # dict_out.origin *= 1000
-            spacing = np.array([float(line[6]), float(line[7]),
-                                float(line[8])]) * 1000
-
-            grid_type = line[9]
-            grid_unit = 'METER'
-
-            line = in_file.readline()
-
-            if grid_type in ['ANGLE', 'ANGLE2D', 'TIME', 'TIME2D']:
-                line = line.split()
-                seed_label = line[0]
-                seed = (float(line[1]) * 1000,
-                        float(line[2]) * 1000,
-                        float(line[3]) * 1000)
-            else:
-                seed_label = None
-                seed = None
-
-        buf_file = Path(path) / f'{base_name}.buf'
-        if float_type == 'FLOAT':
-            data = np.fromfile(buf_file,
-                               dtype=np.float32)
-        elif float_type == 'DOUBLE':
-            data = np.fromfile(buf_file,
-                               dtype=np.float64)
-        else:
-            msg = f'float_type = {float_type} is not valid\n' \
-                  f'float_type should be one of the following valid float ' \
-                  f'types:\n'
-            for valid_float_type in valid_float_types:
-                msg += f'{valid_float_type}\n'
-            raise ValueError(msg)
-
-        data = data.reshape(shape)
-
-        if '.P.' in base_name:
-            phase = 'P'
-        else:
-            phase = 'S'
-
-        # reading the model id file
-        mid_file = Path(path) / f'{base_name}.mid'
-        if mid_file.exists():
-            with open(mid_file, 'r') as mf:
-                model_id = mf.readline().strip()
-
-        else:
-            model_id = str(uuid4())
-
-            # (self, base_name, data_or_dims, origin, spacing, phase,
-            #  seed=None, seed_label=None, value=0,
-            #  grid_type='VELOCITY_METERS', grid_units='METER',
-            #  float_type="FLOAT", model_id=None):
-
-        return cls(base_name, data, origin, spacing, phase, seed=seed,
-                   seed_label=seed_label, grid_type=grid_type,
-                   model_id=model_id)
-
     def _write_grid_data(self, base_name, path='.'):
 
         Path(path).mkdir(parents=True, exist_ok=True)
@@ -255,6 +271,9 @@ class NLLocGrid(Grid):
         if self.grid_units == 'METER':
             origin = self.origin / 1000
             spacing = self.spacing / 1000
+        else:
+            origin = self.origin
+            spacing = self.spacing
 
         line1 = f'{self.shape[0]:d} {self.shape[1]:d} {self.shape[2]:d}  ' \
                 f'{origin[0]:f} {origin[1]:f} {origin[2]:f}  ' \
@@ -263,7 +282,6 @@ class NLLocGrid(Grid):
 
         with open(Path(path) / (base_name + '.hdr'), 'w') as out_file:
             out_file.write(line1)
-            out_file.write(f'{self.model_id}')
 
             if self.grid_type in ['TIME', 'ANGLE']:
 
@@ -287,23 +305,10 @@ class NLLocGrid(Grid):
             out_file.write(f'{self.model_id}')
         return True
 
-    def write(self, base_name, path='.', seed_label=None, seed=None,
-              seed_units=None):
-        """
-
-        """
-
-        # removing the extension if extension is part of the base name
-
-        if self.grid_type in ['TIME', 'TIME2D', 'ANGLE', 'ANGLE2D']:
-            if (seed_label is None) | (seed is None):
-                raise ValueError(f'the seed_label and seed parameters must be'
-                                 f'specified for grid_type in '
-                                 f'{self.grid_type}')
+    def write(self, base_name, path='.'):
 
         self._write_grid_data(base_name, path=path)
-        self._write_grid_header(base_name, path=path, seed_label=seed_label,
-                                seed=seed)
+        self._write_grid_header(base_name, path=path)
         self._write_grid_model_id(base_name, path=path)
 
         return True
@@ -334,7 +339,8 @@ class ModelLayer:
 class LayeredVelocityModel:
 
     def __init__(self, model_id=None, velocity_model_layers=[],
-                 phase='P', grid_units='METER', float_type='FLOAT'):
+                 phase='P', grid_units='METER',
+                 float_type=__default_float_type__):
         """
         Initialize
         :param model_id: model id, if not set the model ID is set using UUID
@@ -455,7 +461,7 @@ class LayeredVelocityModel:
 class VelocityGrid3D(NLLocGrid):
 
     def __init__(self, network_code, data_or_dims, origin, spacing,
-                 phase='P', value=0, float_type='FLOAT',
+                 phase='P', value=0, float_type=__default_float_type__,
                  model_id=None, **kwargs):
 
         self.network_code = network_code
@@ -467,6 +473,19 @@ class VelocityGrid3D(NLLocGrid):
                          value=value, grid_type='VELOCITY_METERS',
                          grid_units='METER', float_type=float_type,
                          model_id=model_id)
+
+    @staticmethod
+    def get_base_name(network_code, phase):
+        """
+        return the base name given a network code and a phase
+        :param network_code: Code of the network
+        :type network_code: str
+        :param phase: Phase, either P or S
+        :type phase: str either 'P' or 'S'
+        :return: the base name
+        """
+        validate_phase(phase)
+        return f'{network_code.upper()}.{phase.upper()}.mod'
 
     @classmethod
     def from_layered_model(cls, layered_model, network_code, dims, origin,
@@ -536,7 +555,8 @@ class VelocityGrid3D(NLLocGrid):
 
         return TTGrid(self.network_code, tt, self.origin, self.spacing,
                       seed, seed_label, phase=self.phase,
-                      float_type=self.float_type, model_id=self.model_id)
+                      float_type=self.float_type, model_id=self.model_id,
+                      grid_units=self.grid_units)
 
     def to_time_multi_threaded(self, seeds, seed_labels, cpu_utilisation=0.9,
                                *args, **kwargs):
@@ -585,7 +605,72 @@ class VelocityGrid3D(NLLocGrid):
 
     @property
     def base_name(self):
-        return f'{self.network_code.upper()}.{self.phase.upper()}.mod'
+        return self.get_base_name(self.network_code, self.phase)
+
+
+class VelocityGridEnsemble:
+    def __init__(self, p_velocity_grid, s_velocity_grid):
+        """
+
+        :param p_velocity_grid: p-wave 3D velocity grid
+        :type p_velocity_grid: VelocityGrid3D
+        :param s_velocity_grid: s-wave 3D velocity grid
+        :type s_velocity_grid: VelocityGrid3D
+        """
+
+        self.p_velocity_grid = p_velocity_grid
+        self.s_velocity_grid = s_velocity_grid
+        self.__i__ = 0
+
+    def __getitem__(self, item):
+        if item.upper() == 'P':
+            return self.p_velocity_grid
+
+        elif item.upper() == 'S':
+            return self.s_velocity_grid
+
+        else:
+            raise ValueError(f'{item} is not a valid key. '
+                             f'The key value must either be "P" or "S"')
+
+    def __iter__(self):
+        self.__i__ = 0
+        return self
+
+    def __next__(self):
+        if self.__i__ < 2:
+            if self.__i__ == '0':
+                return self.p_velocity_grid
+            elif self.__i__ == '1':
+                return self.s_velocity_grid
+        else:
+            raise StopIteration
+
+    # @property
+    # def keys(self):
+    #     return ['P', 'S']
+
+    def keys(self):
+        return ['P', 'S']
+
+    def write(self, path='.'):
+        for key in self.keys():
+            self[key].write(path=path)
+
+    def to_time_multi_threaded(self, seeds, seed_labels, cpu_utilisation=0.9,
+                               *args, **kwargs):
+
+        tt_grid_ensemble = TravelTimeEnsemble([])
+
+        for key in self.keys():
+            tt_grids = self[key].to_time_multi_threaded(seeds, seed_labels,
+                                                        cpu_utilisation=
+                                                        cpu_utilisation,
+                                                        *args, **kwargs)
+
+            tt_grid_ensemble += tt_grids
+
+        return tt_grid_ensemble
 
 
 class SeededGrid(NLLocGrid):
@@ -596,6 +681,7 @@ class SeededGrid(NLLocGrid):
 
     def __init__(self, network_code, data_or_dims, origin, spacing, seed,
                  seed_label, phase='P', value=0,
+                 grid_units=__default_grid_units__,
                  grid_type='TIME', float_type="FLOAT", model_id=None):
         self.seed = seed
         self.seed_label = seed_label
@@ -607,37 +693,58 @@ class SeededGrid(NLLocGrid):
 
         super().__init__(data_or_dims, origin, spacing,
                          phase=phase, value=value,
-                         grid_type='TIME', grid_units='SECOND',
+                         grid_type='TIME', grid_units=grid_units,
                          float_type=float_type, model_id=model_id)
 
     def __repr__(self):
-        line = f'{self.seed_label}: {self.seed}\n'
+        line = f'Travel Time Grid\n' \
+               f'    origin        : {self.origin}\n' \
+               f'    spacing       : {self.spacing}\n'  \
+               f'    dimensions    : {self.shape}\n' \
+               f'    seed label    : {self.seed_label}\n' \
+               f'    seed location : {self.seed}'
         return line
 
-    def base_name(self):
-        base_name = f'{self.network_code}.{self.phase}.{self.seed_label}.' \
-                    f'{self.grid_type.lower()}'
+    @classmethod
+    def get_base_name(cls, network_code, phase, seed_label, grid_type):
+        validate_phase(phase)
+        if grid_type not in cls.__valid_grid_type__:
+            raise ValueError(f'{grid_type} is not a valid grid type')
+
+        base_name = f'{network_code}.{phase}.{seed_label}.' \
+                    f'{grid_type.lower()}'
         return base_name
+
+    @property
+    def base_name(self):
+        base_name = self.get_base_name(self.network_code, self.phase,
+                                       self.seed_label, self.grid_type)
+        return base_name
+
+    def write(self, path='.'):
+        base_name = self.base_name
+        self._write_grid_data(base_name, path=path)
+        self._write_grid_header(base_name, path=path, seed=self.seed,
+                                seed_label=self.seed_label,
+                                seed_units=self.grid_units)
+        self._write_grid_model_id(base_name, path=path)
 
 
 class TTGrid(SeededGrid):
     def __init__(self, network_code, data_or_dims, origin, spacing, seed,
                  seed_label, phase='P', value=0, float_type="FLOAT",
-                 model_id=None):
+                 model_id=None, grid_units=__default_grid_units__):
 
         super().__init__(network_code, data_or_dims, origin, spacing, seed,
                          seed_label, phase=phase, value=value,
                          grid_type='TIME', float_type=float_type,
-                         model_id=model_id)
+                         model_id=model_id, grid_units=grid_units)
 
     def to_azimuth(self):
         """
-        This function calculate the take off angle and azimuth for every grid point
-        given a travel time grid calculated using an Eikonal solver
-        :param travel_time: travel_time grid
-        :type travel_time: ~microquake.core.data.grid.GridData with seed property
-        (travel_time.seed).
-        :rparam: azimuth and takeoff angles grids
+        This function calculate the take off angle and azimuth for every
+        grid point given a travel time grid calculated using an Eikonal solver
+        :return: azimuth and takeoff angles grids
         .. Note: The convention for the takeoff angle is that 0 degree is down.
         """
 
@@ -649,7 +756,7 @@ class TTGrid(SeededGrid):
         return AngleGrid(self.network_code, azimuth, self.origin, self.spacing,
                          self.seed, self.seed_label, 'AZIMUTH',
                          phase=self.phase, float_type=self.float_type,
-                         model_id=self.model_id)
+                         model_id=self.model_id, grid_units=self.grid_units)
 
     def to_takeoff(self):
         gds_tmp = np.gradient(self.data)
@@ -661,7 +768,7 @@ class TTGrid(SeededGrid):
         return AngleGrid(self.network_code, takeoff, self.origin, self.spacing,
                          self.seed, self.seed_label, 'TAKEOFF',
                          phase=self.phase, float_type=self.float_type,
-                         model_id=self.model_id)
+                         model_id=self.model_id, grid_units=self.grid_units)
 
     def to_azimuth_point(self, coord, grid_coordinate=False, mode='nearest',
                          order=1, **kwargs):
@@ -723,7 +830,7 @@ class TTGrid(SeededGrid):
         return velocity_grid.eikonal(seed, seed_label)
 
     def write(self, path='.'):
-        return super().write(self.base_name, path=path)
+        return super().write(path=path)
 
 
 def ray_tracer(travel_time_grid, start, grid_coordinate=False, max_iter=1000,
@@ -789,9 +896,9 @@ def ray_tracer(travel_time_grid, start, grid_coordinate=False, max_iter=1000,
 
     tt = travel_time_grid.interpolate(start, grid_coordinate=False, order=1)
     az = travel_time_grid.to_azimuth_point(start, grid_coordinate=False,
-                               order=1)
+                                           order=1)
     toa = travel_time_grid.to_takeoff_point(start, grid_coordinate=False,
-                                order=1)
+                                            order=1)
 
     ray = Ray(nodes=nodes, station_code=travel_time_grid.seed_label,
               arrival_id=arrival_id, phase=travel_time_grid.phase,
@@ -981,12 +1088,16 @@ class TravelTimeEnsemble:
 
 class AngleGrid(SeededGrid):
     def __init__(self, network_code, data_or_dims, origin, spacing, seed,
-                 seed_label, angle_type, phase='P', value=0, float_type="FLOAT",
-                 model_id=None):
+                 seed_label, angle_type, phase='P', value=0,
+                 float_type="FLOAT", model_id=None,
+                 grid_units=__default_grid_units__):
 
         self.angle_type = angle_type
         super().__init__(network_code, data_or_dims, origin, spacing, seed,
                          seed_label, phase=phase, value=value,
                          grid_type='ANGLE', float_type=float_type,
                          model_id=model_id)
+
+    def write(self, path='.'):
+        pass
 
