@@ -33,6 +33,8 @@ from uquake.core.logging import logger
 from uquake.core.grid import read_grid
 from uquake.core.event import (Arrival, Catalog, Origin, Event, AttribDict)
 
+import pickle
+
 from . import grid
 
 from uuid import uuid4
@@ -176,10 +178,22 @@ class Grid2Time:
 
 
 class NonLinLoc:
-    def __init__(self, control, geographic_transformation, sensors,
-                 location_input_files, search_type,
-                 location_method, gaussian_model_error, search_grid,
-                 signature=None, comment=None, location_output_file_type=None,
+
+    __required_sections__ = ['CONTROL', 'TRANS', 'LOCSRCE', 'LOCFILES',
+                             'LOCSEARCH', 'LOCMETH', 'LOCGAU', 'LOCGRID',]
+
+    __optional_sections__ = ['LOCSIG', 'LOCCOM', 'LOCHYPOUT', 'LOCGAU2',
+                             'LOCPHASEID', 'LOCQUAL2ERR', 'LOCPHSTAT',
+                             'LOCANGLES', 'LOCMAG', 'LOCCMP', 'LOCALIAS',
+                             'LOCEXCLUDE', 'OCDELAY', 'LOCELEVCORR',
+                             'LOCTOPO_SURFACE', 'LOCSTATWT']
+
+    __repeatable__ = ['LOCGRID', 'LOCCMP', 'LOCALIAS', 'LOCEXCLUDE',
+                      'LOCDELAY', 'LOCELEVCORR']
+
+    def __init__(self, control, trans, locsrces, locfiles, locsearch, locmeth,
+                 locgau, locgrids,
+                 locsig='', loccom='', location_output_file_type=None,
                  travel_time_model_error=None,
                  phase_identifier_mapping=None,
                  quality_to_error_mapping=None,
@@ -197,44 +211,44 @@ class NonLinLoc:
         :param control: CONTROL - Sets various general program control
         parameters.
         :type control: Control
-        :param geographic_transformation: TRANS - Sets geographic to working
+        :param trans: gegraphic transformation - Sets geographic to working
         coordinates transformation parameters. The GLOBAL option sets
         spherical regional/teleseismic mode, with no geographic transformation
         - most position values are input and used directly as latitude and
         longitude in degrees. The SIMPLE, SDC and LAMBERT options make
         transformations of geographic coordinates into a Cartesian/rectangular
         system. The NONE transformation performs no geographic conversion.
-        :type geographic_transformation: GeographicTransformation
-        :param sensors: GTSRCE - Source Description: Specifies a source
+        :type trans: GeographicTransformation
+        :param gtsrces: Source Description - Specifies a source
         location. One time grid and one angles grid (if requested) will
         be generated for each source. Four formats are supported:
         XYZ (rectangular grid coordinates),
         LATLON (decimal degrees for latitude/longitude),
         LATLONDM (degrees + decimal minutes for latitude/longitude) and
         LATLONDS (degrees + minutes + decimal seconds for latitude/longitude).
-        :param location_input_files: LOCFILES - Input and Output File Root Name
+        :param locfiles: Location input files - Input and Output File Root Name
         Specifies the directory path and filename for the phase/observation
         files, and the file root names (no extension) for the input time grids
         and the output files.
-        :param search_type: LOCSEARCH - Search Type: Specifies the search type
+        :param locsearch: Search method: Specifies the search type
         and search parameters. The possible search types are
         GRID (grid search), MET (Metropolis), and OCT (Octtree).
-        :param location_method: LOCMETH - Location Method: Specifies the
+        :param locmeth: Location Method: Specifies the
         location method (algorithm) and method parameters.
-        :param gaussian_model_error: LOCGAU - Gaussian Model Errors:
+        :param locgau: Gaussian Model Errors:
         Specifies parameters for Gaussian modelisation-error covariances
         Covariance ij between stations i and j using the relation
         ( Tarantola and Valette, 1982 ):
         Covariance ij = SigmaTime 2 exp(-0.5(Dist 2 ij )/ CorrLen 2 )
         where Dist is the distance in km between stations i and j .
-        :param search_grid: LOCGRID - Search Grid Description: Specifies the
+        :param locgrid: Search Grid Description: Specifies the
         size and other parameters of an initial or nested 3D search grid.
-        The order of LOCGRID statements is critical (see Notes).
+        The order of locgrid statements is critical (see Notes).
 
         -- optional parameters
 
-        :param signature: LOCSIG - Signature text
-        :param comment: LOCCOM - Comment text
+        :param locsig: Signature text
+        :param loccom: Comment text
         :param location_output_file_type: LOCHYPOUT - Output File Types:
         Specifies the filetypes to be used for output.
         :param travel_time_model_error: LOCGAU2 - Travel-Time Dependent Model
@@ -308,19 +322,30 @@ class NonLinLoc:
         """
 
         if isinstance(control, Control):
-            raise TypeError('control must be a type Control object ')
+            raise TypeError(f'control must be a type {type(Control)}')
         self.control = control
 
-        if ((not isinstance(geographic_transformation,
+        if ((not isinstance(trans,
                             GeographicTransformation)) |
-            (not issubclass(geographic_transformation,
+            (not issubclass(trans,
                             GeographicTransformation))):
-            raise TypeError('geographic_transformation must be a class or '
-                            'subclass type GeographicTransformation')
-        self.geographic_transformation = geographic_transformation
+            raise TypeError(f'trans must be a class or '
+                            f'subclass type or subclass of '
+                            f'{type(GeographicTransformation)}')
+        self.trans = trans
 
-        if not isinstance(sensors, Sensors):
-            raise TypeError('sensors must be a type Sensors object')
+        if not isinstance(locsrces, SRCE):
+            raise TypeError(f'locsrces must be a class of type '
+                            f'{type(SRCE)} object')
+
+        self.locsrces = locsrces
+
+        if not isinstance(locfiles, LocFiles):
+            raise TypeError(f'locfiles must be a class of type '
+                            f'{type(LocFiles)}')
+
+
+
         self.sensors = sensors
         self.location_input_files = location_input_files
         self.location_output_files_type = location_output_file_type
@@ -371,811 +396,6 @@ class Control:
 
     def __repr__(self):
         return f'CONTROL {self.message_flag} {self.random_seed}'
-
-
-class LocSearchGrid:
-    def __init__(self, num_sample_draw=1000):
-        """
-
-        :param num_sample_draw: specifies the number of scatter samples to
-        draw from each saved PDF grid ( i.e. grid with gridType = PROB_DENSITY
-        and saveFlag = SAVE ) No samples are drawn if saveFlag < 0.
-        :type num_sample_draw: int
-        """
-        self.num_sample_draw = num_sample_draw
-
-    def __repr__(self):
-        return f'GRID {self.num_sample_draw}\n'
-
-    @property
-    def type(self):
-        return 'LOCSAERCH'
-
-
-class LocSearchMetropolis:
-    def __init__(self, num_samples, num_learn, num_equil, num_begin_save,
-                 num_skip, step_init, step_min, prob_min, step_fact=8.):
-        """
-        Container for the Metropolis Location algorithm parameters
-
-        The Metropolis-Gibbs algorithm performs a directed random walk within
-        a spatial, x,y,z volume to obtain a set of samples that follow the
-        3D PDF for the earthquake location. The samples give and estimate of
-        the optimal hypocenter and an image of the posterior probability
-        density function (PDF) for hypocenter location.
-
-        Advantages:
-
-        1. Does not require partial derivatives, thus can be used with
-        complicated, 3D velocity structures
-        2. Accurate recovery of moderately irregular (non-ellipsoidal)
-        PDF's with a single minimum
-        3. Only only moderately slower (about 10 times slower) than linearised,
-        iterative location techniques, and is much faster
-        (about 100 times faster) than the grid-search
-        4. Results can be used to obtain confidence contours
-
-        Drawbacks:
-
-        1. Stochastic coverage of search region - may miss important features
-        2. Inconsistent recovery of very irregular (non-ellipsoidal)
-        PDF's with multiple minima
-        3. Requires careful selection of sampling parameters
-        4. Attempts to read full 3D travel-time grid files into memory,
-        thus may run very slowly with large number of observations and large
-        3D travel-time grids
-
-        :param num_samples: total number of accepted samples to obtain (min:0)
-        :type num_samples: int
-        :param num_learn: number of accepted samples for learning stage of
-        search (min:0)
-        :type num_learn: int
-        :param num_equil: number of accepted samples for equilibration stage
-        of search (min:0)
-        :type num_equil: int
-        :param num_begin_save: number of accepted samples after which to begin
-        saving stage of search, denotes end of equilibration stage (min:0)
-        :type num_begin_save: int
-        :param num_skip: number of accepted samples to skip between saves
-        (numSkip = 1 saves every accepted sample, min:1)
-        :type num_skip: int
-        :param step_init: initial step size in km for the learning stage
-        (stepInit < 0.0 gives automatic step size selection. If the search
-        takes too long, the initial step size may be too large;
-        this may be the case if the search region is very large relative
-        to the volume of the high confidence region for the locations.)
-        :type step_init: float
-        :param step_min: minimum step size allowed during any search stage
-        (This parameter should not be critical, set it to a low value. min:0)
-        :type step_min: float
-        :param prob_min: minimum value of the maximum probability (likelihood)
-        that must be found by the end of learning stage, if this value is not
-        reached the search is aborted (This parameters allows the filtering of
-        locations outside of the search grid and locations with large
-        residuals.)
-        :type prob_min: float
-        :param step_fact: step factor for scaling step size during
-        equilibration stage (Try a value of 8.0 to start.) Default=8.
-        :type step_fact: float
-        """
-
-        self.num_samples = num_samples
-        self.num_learn = num_learn
-        self.num_equil = num_equil
-        self.num_begin_save = num_begin_save
-        self.num_skip = num_skip
-        self.step_init = step_init
-        self.step_min = step_min
-        self.prob_min = prob_min
-        self.step_fact = step_fact
-
-    def __repr__(self):
-        line = f'LOCSEARCH MET {self.num_samples} {self.num_learn} ' \
-               f'{self.num_equil} {self.num_begin_save} {self.num_skip} ' \
-               f'{self.step_min} {self.step_min} {self.step_fact} ' \
-               f'{self.prob_min}\n'
-
-        return line
-
-    @classmethod
-    def init_with_default(cls):
-        pass
-
-    @property
-    def type(self):
-        return 'LOCSAERCH'
-
-
-class LocSearchOctTree:
-    def __init__(self, init_num_cell_x, init_num_cell_y, init_num_cell_z,
-                 min_node_size, max_node_size, num_scatter,
-                 use_station_density=False, stop_on_min_node_size=True):
-        """
-        Container for the Octree Location algorithm parameters
-
-        Documenation: http://alomax.free.fr/nlloc/octtree/OctTree.html
-
-        Developed in collaboration with Andrew Curtis; Schlumberger Cambridge
-        Research, Cambridge CB3 0EL, England; curtis@cambridge.scr.slb.com
-
-        The oct-tree importance sampling algorithm gives accurate, efficient
-        and complete mapping of earthquake location PDFs in 3D space (x-y-z).
-
-        Advantages:
-
-        1. Much faster than grid-search (factor 1/100)
-        2. More global and complete than Metropolis-simulated annealing
-        3. Simple, with very few parameters (initial grid size, number of samples)
-
-        Drawbacks:
-
-        1. Results are weakly dependant on initial grid size - the method may
-        not identify narrow, local maxima in the PDF.
-        2. Attempts to read full 3D travel-time grid files into memory,
-        thus may run very slowly with large number of observations and large
-        3D travel-time grids
-
-        :param init_num_cell_x: initial number of octtree cells in the x
-        direction
-        :type init_num_cell_x: int
-        :param init_num_cell_y: initial number of octtree cells in the y
-        direction
-        :type init_num_cell_y: int
-        :param init_num_cell_z: initial number of octtree cells in the z
-        direction
-        :type init_num_cell_z: int
-        :param min_node_size: smallest octtree node side length to process,
-        the octree search is terminated after a node with a side smaller
-        than this length is generated
-        :type min_node_size: float
-        :param max_node_size: total number of nodes to process
-        :type max_node_size: int
-        :param num_scatter: the number of scatter samples to draw from the
-        octtree results
-        :type num_scatter: int
-        :param use_station_density: flag, if True weights oct-tree cell
-        probability values used for subdivide decision in proportion to number
-        of stations in oct-tree cell; gives higher search priority to cells
-        containing stations, stablises convergence to local events when global
-        search used with dense cluster of local stations
-        (default:False)
-        :type use_station_density: bool
-        :param stop_on_min_node_size: flag, if True, stop search when first
-        min_node_size reached, if False stop subdividing a given cell when
-        min_node_size reached (default:True)
-        :type stop_on_min_node_size: bool
-        """
-
-        self.init_num_cell_x = init_num_cell_x
-        self.init_num_cell_y = init_num_cell_y
-        self.init_num_cell_z = init_num_cell_z
-        self.min_node_size = min_node_size
-        self.max_node_size = max_node_size
-        self.num_scatter = num_scatter
-        self.use_station_density = use_station_density
-        self.stop_on_min_node_size = stop_on_min_node_size
-
-    @classmethod
-    def init_default(cls):
-        init_num_cell_x = 5
-        init_num_cell_y = 5
-        init_num_cell_z = 5
-        min_node_size = 1E-6
-        max_node_size = 5000
-        num_scatter = 500
-        use_station_density = False
-        stop_on_min_node_size = True
-        return cls(init_num_cell_x, init_num_cell_y, init_num_cell_z,
-                   min_node_size, max_node_size, num_scatter,
-                   use_station_density, stop_on_min_node_size)
-
-    def __repr__(self):
-        line = f'LOCSEARCH OCT {self.init_num_cell_x} ' \
-               f'{self.init_num_cell_y} {self.init_num_cell_z} ' \
-               f'{self.min_node_size} {self.max_num_nodes} ' \
-               f'{self.num_scatter} {self.use_station_density:d} ' \
-               f'{self.stop_on_min_node_size:d}\n'
-
-        return line
-
-    @property
-    def type(self):
-        return 'LOCSEARCH'
-
-
-class GaussianModelErrors:
-    def __init__(self, sigma_time, correlation_length):
-        """
-        container for Gaussian Error Model
-        :param sigma_time: typical error in seconds for travel-time to one
-        station due to model errors
-        :type sigma_time: float
-        :param correlation_length: correlation length that controls covariance
-        between stations ( i.e. may be related to a characteristic scale length
-        of the medium if variations on this scale are not included in the
-        velocity model)
-        :type correlation_length: float
-        """
-
-        self.sigma_time = sigma_time
-        self.correlation_length = correlation_length
-
-    @classmethod
-    def init_default(cls):
-        sigma_time = 1E-3
-        correlation_length = 1E-3
-
-        return cls(sigma_time, correlation_length)
-
-    def __repr__(self):
-        return f'LOCGAU {self.sigma_time} {self.correlation_length}\n'
-
-
-
-__valid_location_methods__ = ['GAU_ANALYTIC', 'EDT', 'EDT_OT_WT',
-                              'EDT_OT_WT_ML']
-
-class LocationMethod:
-    def __init__(self, method, max_dist_sta_grid, min_number_phases,
-                 max_number_phases, min_number_s_phases, vp_vs_ratio,
-                 max_number_3d_grid_memory, min_dist_sta_grid):
-        """
-        container for location method
-        :param method: location method/algorithm ( GAU_ANALYTIC = the inversion
-        approach of Tarantola and Valette (1982) with L2-RMS likelihood
-        function. EDT = Equal Differential Time likelihood function cast into
-        the inversion approach of Tarantola and Valette (1982) EDT_OT_WT =
-        Weights EDT-sum probabilities by the variance of origin-time estimates
-        over all pairs of readings. This reduces the probability (PDF values)
-        at points with inconsistent OT estimates, and leads to more compact
-        location PDF's. EDT_OT_WT_ML = version of EDT_OT_WT with EDT
-        origin-time weighting applied using a grid-search, maximum-likelihood
-        estimate of the origin time. Less efficient than EDT_OT_WT which
-        uses simple statistical estimate of the origin time.)
-        :param max_dist_sta_grid: maximum distance in km between a station and the
-        center of the initial search grid; phases from stations beyond this
-        distance will not be used for event location
-        :param min_number_phases: minimum number of phases that must be
-        accepted before event will be located
-        :param max_number_phases: maximum number of accepted phases that will
-        be used for event location; only the first maxNumberPhases read from
-        the phase/observations file are used for location
-        :param min_number_s_phases: minimum number of S phases that must be
-        accepted before event will be located
-        :param vp_vs_ratio: P velocity to S velocity ratio. If VpVsRatio > 0.0
-        then only P phase travel-times grids are read and VpVsRatio is used to
-        calculate S phase travel-times. If VpVsRatio < 0.0 then S phase
-        travel-times grids are used.
-        :param max_number_3d_grid_memory: maximum number of 3D travel-time
-        grids to attempt to read into memory for Metropolis-Gibbs search. This
-        helps to avoid time-consuming memory swapping that occurs if the total
-        size of grids read exceeds the real memory of the computer. 3D grids
-        not in memory are read directly from disk. If maxNum3DGridMemory < 0
-        then NLLoc attempts to read all grids into memory.
-        :param min_dist_sta_grid: minimum distance in km between a station and
-        the center of the initial search grid; phases from stations closer than
-        this distance will not be used for event location
-        """
-
-        validate(method, __valid_location_methods__)
-        self.method = method
-
-        self.max_dist_sta_grid = max_dist_sta_grid
-        self.min_number_phases = min_number_phases
-        self.max_number_phases = max_number_phases
-        self.min_number_s_phases = min_number_s_phases
-        self.vp_vs_ratio = vp_vs_ratio
-        self.max_number_3d_grid_memory = max_number_3d_grid_memory
-        self.min_dist_sta_grid = min_dist_sta_grid
-
-    @classmethod
-    def init_default(cls):
-        method = 'EDT_OT_WT'
-        max_dist_sta_grid = 9999
-        min_number_phases = 6
-        max_number_phases = -1
-        min_number_s_phases = -1
-        vp_vs_ratio = -1
-        max_number_3d_grid_memory = 0
-        min_dist_sta_grid = 0
-
-        return cls(method, max_dist_sta_grid, min_number_phases,
-                   max_number_phases, min_number_s_phases, vp_vs_ratio,
-                   max_number_3d_grid_memory, min_dist_sta_grid)
-
-    def __repr__(self):
-        line = f'LOCMETH {self.method} {self.max_dist_sta_grid} ' \
-               f'{self.min_number_phases} {self.max_number_phases} ' \
-               f'{self.min_number_s_phases} {self.vp_vs_ratio}\n'
-
-        return line
-
-
-
-class Observations:
-    def __init__(self, picks, p_pick_error=1e-3, s_pick_error=1e-3):
-        """
-
-        :param picks: a list of pick object
-        :type picks: list of uquake.core.event.pick
-        :param p_pick_error: p-wave picking error in second
-        :param s_pick_error: s-wave picking error in second
-        """
-
-        self.picks = picks
-        self.p_pick_error = p_pick_error
-        self.s_pick_error = s_pick_error
-
-    @classmethod
-    def from_event(cls, event, p_pick_error=1e-3, s_pick_error=1e-3,
-                   origin_index=None):
-
-        if type(event) is Catalog:
-            event = event[0]
-            logger.warning('An object type Catalog was provided. Taking the '
-                           'first event of the catalog. This may lead to '
-                           'unwanted behaviour')
-
-        if origin_index is None:
-            if event.preferred_origin() is None:
-                logger.warning('The preferred origin is not defined. The last'
-                               'inserted origin will be use. This may lead '
-                               'to unwanted behaviour')
-
-                origin = event.origins[-1]
-            else:
-                origin = event.preferred_origin()
-        else:
-            origin = event.origins[origin_index]
-
-        picks = [arrival.get_pick() for arrival in origin.arrivals]
-
-        return cls(picks, p_pick_error=p_pick_error,
-                   s_pick_error=s_pick_error)
-
-    def __repr__(self):
-
-        lines = ''
-        for pick in self.picks:
-            if pick.evaluation_status == 'rejected':
-                continue
-
-            sensor = pick.sensor
-            instrument_identification = pick.waveform_id.channel_code[0:2]
-            component = pick.waveform_id.channel_code[-1]
-            phase_onset = 'e' if pick.onset in ['emergent', 'questionable'] \
-                else 'i'
-            phase_descriptor = pick.phase_hint.upper()
-            if pick.polarity is None:
-                first_motion = '?'
-            else:
-                first_motion = 'U' if pick.polarity.lower() == 'positive' \
-                    else 'D'
-            datetime_str = pick.time.strftime('%Y%m%d %H%M %S.%f')
-
-            error_type = 'GAU'
-            if pick.phase_hint.upper() == 'P':
-                pick_error = f'{self.p_pick_error:0.2e}'
-            else:
-                pick_error = f'{self.s_pick_error:0.2e}'
-
-            # not implemented
-            coda_duration = -1
-            amplitude = -1
-            period = -1
-            phase_weight = 1
-
-            line = f'{sensor:<6s} {instrument_identification:<4s} ' \
-                   f'{component:<4s} {phase_onset:1s} ' \
-                   f'{phase_descriptor:<6s} {first_motion:1s} ' \
-                   f'{datetime_str} {error_type} {pick_error} ' \
-                   f'{coda_duration:.2e} {amplitude:.2e} {period:.2e} ' \
-                   f'{phase_weight:d}\n'
-
-            lines += line
-
-        return lines
-
-    def write(self, file_name, path='.'):
-        with open(Path(path) / file_name) as file_out:
-            file_out.write(str(self))
-
-
-class GridTimeFiles:
-    def __init__(self, velocity_file_path, travel_time_file_path, p_wave=True,
-                 swap_bytes_on_input=False):
-        """
-        Specifies the directory path and file root name (no extension), and
-        the wave type identifier for the input velocity grid and output
-        time grids.
-        :param velocity_file_path: full or relative path and file
-        root name (no extension) for input velocity grid (generated by
-        program Vel2Grid)
-        :type velocity_file_path: str
-        :param travel_time_file_path: full or relative path and file
-        root name (no extension) for output travel-time and take-off angle
-        grids
-        :type travel_time_file_path: str
-        :param p_wave: p-wave if True, s-wave if False
-        :type p_wave: bool
-        :param swap_bytes_on_input: flag to indicate if hi and low bytes of
-        input velocity grid file should be swapped
-        :type swap_bytes_on_input: bool
-        """
-
-        self.velocity_file_path = velocity_file_path
-        self.travel_time_file_path = travel_time_file_path
-        if p_wave:
-            self.phase = 'P'
-        else:
-            self.phase = 'S'
-
-        self.swap_bytes_on_input=int(swap_bytes_on_input)
-
-    def __repr__(self):
-        return f'GTFILES {self.velocity_file_path} ' \
-               f'{self.travel_time_file_path} {self.phase} ' \
-               f'{self.swap_bytes_on_input}'
-
-
-class GridTimeMode:
-    def __init__(self, grid_3d=True, calculate_angles=True):
-        """
-        Specifies several program run modes.
-        :param grid_3d: if True 3D grid if False 2D grid
-        :type grid_3d: bool
-        :param calculate_angles: if True calculate angles and not if False
-        :type calculate_angles: bool
-        """
-
-        if grid_3d:
-            self.grid_mode = 'GRID3D'
-        else:
-            self.grid_mode = 'GRID2D'
-
-        if calculate_angles:
-            self.angle_mode = 'ANGLES_YES'
-        else:
-            self.angle_mode = 'ANGLES_NO'
-
-    def __repr__(self):
-        return f'GTMODE {self.grid_mode} {self.angle_mode}'
-
-
-class Sensors:
-    def __init__(self, sensors):
-        """
-        specifies a series of source location from an inventory object
-        :param sensors: inventory object
-        :type sensors: list of uquake.core.inventory.Sensors
-        """
-
-        self.sensors = sensors
-
-    @classmethod
-    def from_inventory(cls, inventory):
-        """
-        create from an inventory object
-        :param inventory: uquake.core.inventory.Inventory
-        :return: a Sensors object
-        :rtype: Sensors
-        """
-
-        sensors = inventory.sensors
-        return cls(sensors)
-
-    def __repr__(self):
-        line = ""
-        for sensor in self.sensors:
-
-            # test if sensor name is shorter than 6 characters
-
-            line += f'GTSRCE {sensor.code} XYZ ' \
-                    f'{sensor.x / 1000:>10.4f} ' \
-                    f'{sensor.y / 1000:>10.4f} ' \
-                    f'{sensor.z / 1000:>10.4f} ' \
-                    f'0.00\n'
-
-        return line
-
-
-__observation_file_types__ = ['NLLOC_OBS', 'HYPO71', 'HYPOELLIPSE',
-                              'NEIC', 'CSEM_ALERT', 'SIMULPS', 'HYPOCENTER',
-                              'HYPODD', 'SEISAN', 'NORDIC', 'NCSN_Y2K_5',
-                              'NCEDC_UCB', 'ETH_LOC', 'RENASS_WWW',
-                              'RENASS_DEP', 'INGV_BOLL', 'INGV_BOLL_LOCAL',
-                              'INGV_ARCH']
-
-
-class ProjectManager:
-
-    inventory_file_name = 'inventory.xml'
-
-    def __init__(self, path, project_name, network_code):
-        """
-        provide information on file names and locations
-        :param path: base path
-        :type path: str
-        :param project_name: project name or id
-        :type project_name: str
-        :param network_code: network name or id
-        :type network_code: str
-        """
-
-        self.root_directory = Path(path) / project_name / network_code
-        # create the directory if it does not exist
-        self.root_directory.mkdir(parents=True, exist_ok=True)
-
-        self.inventory_location = self.root_directory / 'inventory'
-        self.inventory_location.mkdir(parents=True, exist_ok=True)
-        self.inventory_file = self.inventory_location / 'inventory.xml'
-        if not self.inventory_file.exists():
-            logger.warning('the project does not contain an inventory file. '
-                           'to add an inventory file use the add_inventory '
-                           'method.')
-
-        self.velocity_grid_location = self.root_directory / 'velocities'
-        self.velocity_grid_location.mkdir(parents=True, exist_ok=True)
-
-        p_vel_base_name = grid.VelocityGrid3D.get_base_name(self.network, 'P')
-        self.p_velocity_file = self.velocity_grid_location / p_vel_base_name
-        if not self.p_velocity_file.exists():
-            logger.warning('the project does not contain a p-wave velocity '
-                           'model. to add a p-wave velocity model to the '
-                           'project please use the add_velocity or '
-                           'add_velocities methods.')
-
-        s_vel_base_name = grid.VelocityGrid3D.get_base_name(self.network, 'S')
-        self.s_velocity_file = self.velocity_grid_location / s_vel_base_name
-        if not self.p_velocity_file.exists():
-            logger.warning('the project does not contain a s-wave velocity '
-                           'model. to add a s-wave velocity model to the '
-                           'project please use the add_velocity or '
-                           'add_velocities methods.')
-
-        self.travel_time_grid_location = self.root_directory / 'times'
-        self.travel_time_grid_location.mkdir(parents=True, exist_ok=True)
-        file_list = list(self.travel_time_grid_location / '*.hrd')
-        if len(file_list) == 0:
-            logger.warning('the project does not contain travel time grids. '
-                           'to initialize the travel-time grid use the '
-                           'init_travel_time_grid method. Note that '
-                           'this require the project to contain both '
-                           'an inventory and a velocities files.')
-
-        self.obs_path = self.root_directory / 'observations'
-        self.obs_path.mkdir(parents=True, exist_ok=True)
-
-        self.run_id = str(uuid4())
-        self.current_run_directory = self.root_directory / 'run' / self.run_id
-        self.current_run_directory.mkdir(parents=True, exist_ok=False)
-
-    def init_travel_time_grid(self):
-        """
-        initialize the travel time grids
-        """
-        try:
-            inventory = read_inventory(self.inventory_file)
-        except Exception as e:
-            logger.error(e)
-            raise IOError('the project does not contain an inventory file. To '
-                          'add an inventory file to the project use '
-                          'the FileManager.add_inventory method')
-
-        sensors = inventory.sensors
-
-        p_vel_base_name = grid.VelocityGrid3D.get_base_name(self.network, 'P')
-        s_vel_base_name = grid.VelocityGrid3D.get_base_name(self.network, 'S')
-        try :
-            p_velocity = grid.read_grid(self.velocity_grid_location,
-                                        p_vel_base_name)
-        except Exception as e:
-            logger.error(e)
-            raise IOError('the project does not contain a P-wave velocity '
-                          'model. Use the FileManager.add_velocity or '
-                          'FileManager.add_velocities to add a velocity '
-                          'model to the project')
-
-        try:
-            s_velocity = grid.read_grid(self.velocity_grid_location,
-                                        s_vel_base_name)
-        except Exception as e:
-            logger.error(e)
-            raise IOError('the project does not contain a S-wave velocity '
-                          'model. Use the FileManager.add_velocity or '
-                          'FileManager.add_velocities to add a velocity '
-                          'model to the project')
-
-        velocity_models = grid.VelocityGridEnsemble(p_velocity, s_velocity)
-
-        seeds = []
-        seed_labels = []
-        for sensor in sensors:
-            seeds.append(sensor.loc)
-            seed_labels(sensor.code)
-
-        tt_gs = velocity_models.to_time_multi_threaded(seeds,seed_labels)
-        tt_gs.write(self.travel_time_location)
-
-    def add_inventory(self, inventory):
-        """
-        adding a inventory object to the project
-        :param inventory:
-        :return:
-        """
-        inventory.write(self.inventory_location / self.inventory_file_name)
-
-    def add_velocities(self, velocities):
-        """
-        add P- and S-wave velocity models to the project
-        :param velocities: velocity models
-        :type velocities: nlloc.grid.VelocityEnsemble
-        :return:
-        """
-
-        velocities.write(path=self.velocity_grid_location)
-
-    def add_velocity(self, velocity):
-        """
-        add P- or S-wave velocity model to the project
-        :param velocity: p-wave velocity model
-        :type velocity: nlloc.grid.VelocityGrid3D
-        :return:
-        """
-
-        velocity.write(path=self.velocity_grid_location)
-
-    def add_observations(self, observations):
-        """
-        adding observations to the project
-        :param observations: Observations
-        :return:
-        """
-        self.current_run_directory.mkdir(parents=True, exist_ok=True)
-        observations.write('observations.obs', path=self.current_run_directory)
-
-    def clean(self):
-        """
-        remove the files and directory related to a particular run id and
-        create a new run id and related directory.
-        :return:
-        """
-        logger.info(f'removing {self.current_run_directory}')
-        for item in list(self.current_run_directory.glob('*')):
-            item.unlind()
-        self.current_run_directory.rmdir()
-        self.run_id = str(uuid4())
-        self.current_run_directory = self.root_directory / 'run' / self.run_id
-
-    def add_control_file(self, control, geographic_transformation,
-                         search_method, location_method,
-                         gaussian_model_errors, signature=None, comment=None):
-
-        """
-
-        :param control:
-        :param geographic_transformation:
-        :param signature:
-        :param comment:
-        :return:
-
-        control
-        geographic_transformation
-        signature
-        comment
-        locsrce
-        locfiles
-        locsearch
-        locmeth
-        locgau
-        locgau2 - optional
-        locphaseid - optional
-        locqualerr - optional
-        locgrid
-
-        """
-
-        signature = f'LOCSIG {signature}\n'
-        comment = f'LOCCOM {comment}\n'
-
-        ctrl_file = '\n'.join(str(control), str(geographic_transformation),
-                              signature, comment, str(search_method),
-                              str(location_method), str(gaussian_model_errors))
-
-    def init_default(self):
-        Control
-
-
-
-class InputFiles:
-    def __init__(self, observation_files, travel_time_file_root,
-                 output_file_root, observation_file_type='NLLOC_OBS',
-                 i_swap_bytes=False, create_missing_folders=True):
-        """
-        Specifies the directory path and filename for the phase/observation
-        files, and the file root names (no extension) for the input time grids
-        and the output files.
-
-        the path where the files are to be located is
-
-        :param observation_files: full or relative path and name for
-        phase/observations files, mulitple files may be specified with
-        standard UNIX "wild-card" characters ( * and ? )
-        :type observation_files: str
-        :param observation_file_type: (choice: NLLOC_OBS HYPO71 HYPOELLIPSE
-        NEIC CSEM_ALERT SIMULPS HYPOCENTER HYPODD SEISAN NORDIC NCSN_Y2K_5
-        NCEDC_UCB ETH_LOC RENASS_WWW RENASS_DEP INGV_BOLL
-        INGV_BOLL_LOCAL INGV_ARCH) format type for phase/observations files
-        (see Phase File Formats) - DEFAULT NLLOC_OBS
-        :type observation_file_type: str
-        :param travel_time_file_root: full or relative path and file root name
-        (no extension) for input time grids (generated by program Grid2Time,
-        edu.sc.seis.TauP.TauP_Table_NLL, or other software.
-        :type travel_time_file_root: str
-        :param output_file_root: full or relative path and file root name
-        (no extension) for output files
-        :type output_file_root: str
-        :param i_swap_bytes: flag to indicate if hi and low bytes of input
-        time grid files should be swapped. Allows reading of travel-time grids
-        from different computer architecture platforms during TRANS GLOBAL mode
-        location. DEFAULT=False
-        :type i_swap_bytes: bool
-        :param create_missing_folders: if True missing folder will be created
-        """
-
-        # validate if the path exist if the path does not exist the path
-        # should be created
-        observation_files = Path(observation_files)
-        if not observation_files.parent.exists():
-            if create_missing_folders:
-                logger.warning(f'the path <{observation_files.parent}> does '
-                               f'not exist. missing folders will be created')
-                observation_files.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                raise IOError(f'path <{observation_files.parent}> does not '
-                              f'exist')
-
-        self.observation_files = observation_files
-
-        travel_time_file_root = Path(travel_time_file_root)
-        if not travel_time_file_root.parent.exists():
-            if create_missing_folders:
-                logger.warning(f'the path <{travel_time_file_root.parent}> '
-                               f'does not exist. missing folders will '
-                               f'be created')
-
-                travel_time_file_root.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                raise IOError(f'path <{travel_time_file_root.parent}> does '
-                              f'not exist')
-
-        self.travel_time_file_root = travel_time_file_root
-
-        output_file_root = Path(output_file_root)
-
-        if not output_file_root.parent.exists():
-            if create_missing_folders:
-                logger.warning(f'the path <{output_file_root.parent}> '
-                               f'does not exist. missing folders will '
-                               f'be created')
-
-                output_file_root.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                raise IOError(f'path <{output_file_root.parent}> does '
-                              f'not exist')
-
-        self.output_file_root = output_file_root
-
-        validate(observation_file_type, __observation_file_types__)
-        self.observation_file_type = observation_file_type
-
-        self.i_swap_bytes = i_swap_bytes
-
-    def __repr__(self):
-        line = f'LOCFILES {self.observation_files} ' \
-               f'{self.observation_file_type} {self.travel_time_file_root} ' \
-               f'{self.output_file_root} {int(self.i_swap_bytes)}\n'
-        return line
 
 
 class GeographicTransformation:
@@ -1304,6 +524,1131 @@ class LambertGeographicTransformation(GeographicTransformation):
                f'{self.latitude_origin} {self.longitude_origin} ' \
                f'{self.first_standard_parallax} ' \
                f'{self.second_standard_parallax} {self.rotation_angle}'
+
+
+class LocSearchGrid:
+    def __init__(self, num_sample_draw=1000):
+        """
+
+        :param num_sample_draw: specifies the number of scatter samples to
+        draw from each saved PDF grid ( i.e. grid with gridType = PROB_DENSITY
+        and saveFlag = SAVE ) No samples are drawn if saveFlag < 0.
+        :type num_sample_draw: int
+        """
+        self.num_sample_draw = num_sample_draw
+
+    def __repr__(self):
+        return f'GRID {self.num_sample_draw}\n'
+
+    @property
+    def type(self):
+        return 'LOCSEARCH'
+
+
+class LocSearchMetropolis:
+    def __init__(self, num_samples, num_learn, num_equil, num_begin_save,
+                 num_skip, step_init, step_min, prob_min, step_fact=8.):
+        """
+        Container for the Metropolis Location algorithm parameters
+
+        The Metropolis-Gibbs algorithm performs a directed random walk within
+        a spatial, x,y,z volume to obtain a set of samples that follow the
+        3D PDF for the earthquake location. The samples give and estimate of
+        the optimal hypocenter and an image of the posterior probability
+        density function (PDF) for hypocenter location.
+
+        Advantages:
+
+        1. Does not require partial derivatives, thus can be used with
+        complicated, 3D velocity structures
+        2. Accurate recovery of moderately irregular (non-ellipsoidal)
+        PDF's with a single minimum
+        3. Only only moderately slower (about 10 times slower) than linearised,
+        iterative location techniques, and is much faster
+        (about 100 times faster) than the grid-search
+        4. Results can be used to obtain confidence contours
+
+        Drawbacks:
+
+        1. Stochastic coverage of search region - may miss important features
+        2. Inconsistent recovery of very irregular (non-ellipsoidal)
+        PDF's with multiple minima
+        3. Requires careful selection of sampling parameters
+        4. Attempts to read full 3D travel-time grid files into memory,
+        thus may run very slowly with large number of observations and large
+        3D travel-time grids
+
+        :param num_samples: total number of accepted samples to obtain (min:0)
+        :type num_samples: int
+        :param num_learn: number of accepted samples for learning stage of
+        search (min:0)
+        :type num_learn: int
+        :param num_equil: number of accepted samples for equilibration stage
+        of search (min:0)
+        :type num_equil: int
+        :param num_begin_save: number of accepted samples after which to begin
+        saving stage of search, denotes end of equilibration stage (min:0)
+        :type num_begin_save: int
+        :param num_skip: number of accepted samples to skip between saves
+        (numSkip = 1 saves every accepted sample, min:1)
+        :type num_skip: int
+        :param step_init: initial step size in km for the learning stage
+        (stepInit < 0.0 gives automatic step size selection. If the search
+        takes too long, the initial step size may be too large;
+        this may be the case if the search region is very large relative
+        to the volume of the high confidence region for the locations.)
+        :type step_init: float
+        :param step_min: minimum step size allowed during any search stage
+        (This parameter should not be critical, set it to a low value. min:0)
+        :type step_min: float
+        :param prob_min: minimum value of the maximum probability (likelihood)
+        that must be found by the end of learning stage, if this value is not
+        reached the search is aborted (This parameters allows the filtering of
+        locations outside of the search grid and locations with large
+        residuals.)
+        :type prob_min: float
+        :param step_fact: step factor for scaling step size during
+        equilibration stage (Try a value of 8.0 to start.) Default=8.
+        :type step_fact: float
+        """
+
+        self.num_samples = num_samples
+        self.num_learn = num_learn
+        self.num_equil = num_equil
+        self.num_begin_save = num_begin_save
+        self.num_skip = num_skip
+        self.step_init = step_init
+        self.step_min = step_min
+        self.prob_min = prob_min
+        self.step_fact = step_fact
+
+    def __repr__(self):
+        line = f'LOCSEARCH MET {self.num_samples} {self.num_learn} ' \
+               f'{self.num_equil} {self.num_begin_save} {self.num_skip} ' \
+               f'{self.step_min} {self.step_min} {self.step_fact} ' \
+               f'{self.prob_min}\n'
+
+        return line
+
+    @classmethod
+    def init_with_default(cls):
+        pass
+
+    @property
+    def type(self):
+        return 'LOCSEARCH'
+
+
+class LocSearchOctTree:
+    def __init__(self, init_num_cell_x, init_num_cell_y, init_num_cell_z,
+                 min_node_size, max_node_size, num_scatter,
+                 use_station_density=False, stop_on_min_node_size=True):
+        """
+        Container for the Octree Location algorithm parameters
+
+        Documenation: http://alomax.free.fr/nlloc/octtree/OctTree.html
+
+        Developed in collaboration with Andrew Curtis; Schlumberger Cambridge
+        Research, Cambridge CB3 0EL, England; curtis@cambridge.scr.slb.com
+
+        The oct-tree importance sampling algorithm gives accurate, efficient
+        and complete mapping of earthquake location PDFs in 3D space (x-y-z).
+
+        Advantages:
+
+        1. Much faster than grid-search (factor 1/100)
+        2. More global and complete than Metropolis-simulated annealing
+        3. Simple, with very few parameters (initial grid size, number of samples)
+
+        Drawbacks:
+
+        1. Results are weakly dependant on initial grid size - the method may
+        not identify narrow, local maxima in the PDF.
+        2. Attempts to read full 3D travel-time grid files into memory,
+        thus may run very slowly with large number of observations and large
+        3D travel-time grids
+
+        :param init_num_cell_x: initial number of octtree cells in the x
+        direction
+        :type init_num_cell_x: int
+        :param init_num_cell_y: initial number of octtree cells in the y
+        direction
+        :type init_num_cell_y: int
+        :param init_num_cell_z: initial number of octtree cells in the z
+        direction
+        :type init_num_cell_z: int
+        :param min_node_size: smallest octtree node side length to process,
+        the octree search is terminated after a node with a side smaller
+        than this length is generated
+        :type min_node_size: float
+        :param max_node_size: total number of nodes to process
+        :type max_node_size: int
+        :param num_scatter: the number of scatter samples to draw from the
+        octtree results
+        :type num_scatter: int
+        :param use_station_density: flag, if True weights oct-tree cell
+        probability values used for subdivide decision in proportion to number
+        of stations in oct-tree cell; gives higher search priority to cells
+        containing stations, stablises convergence to local events when global
+        search used with dense cluster of local stations
+        (default:False)
+        :type use_station_density: bool
+        :param stop_on_min_node_size: flag, if True, stop search when first
+        min_node_size reached, if False stop subdividing a given cell when
+        min_node_size reached (default:True)
+        :type stop_on_min_node_size: bool
+        """
+
+        self.init_num_cell_x = init_num_cell_x
+        self.init_num_cell_y = init_num_cell_y
+        self.init_num_cell_z = init_num_cell_z
+        self.min_node_size = min_node_size
+        self.max_node_size = max_node_size
+        self.num_scatter = num_scatter
+        self.use_station_density = use_station_density
+        self.stop_on_min_node_size = stop_on_min_node_size
+
+    @classmethod
+    def init_default(cls):
+        init_num_cell_x = 5
+        init_num_cell_y = 5
+        init_num_cell_z = 5
+        min_node_size = 1E-6
+        max_node_size = 5000
+        num_scatter = 500
+        use_station_density = False
+        stop_on_min_node_size = True
+        return cls(init_num_cell_x, init_num_cell_y, init_num_cell_z,
+                   min_node_size, max_node_size, num_scatter,
+                   use_station_density, stop_on_min_node_size)
+
+    def __repr__(self):
+        line = f'LOCSEARCH OCT {self.init_num_cell_x} ' \
+               f'{self.init_num_cell_y} {self.init_num_cell_z} ' \
+               f'{self.min_node_size} {self.max_num_nodes} ' \
+               f'{self.num_scatter} {self.use_station_density:d} ' \
+               f'{self.stop_on_min_node_size:d}\n'
+
+        return line
+
+    @property
+    def type(self):
+        return 'LOCSEARCH'
+
+
+class GaussianModelErrors:
+    def __init__(self, sigma_time, correlation_length):
+        """
+        container for Gaussian Error Model
+        :param sigma_time: typical error in seconds for travel-time to one
+        station due to model errors
+        :type sigma_time: float
+        :param correlation_length: correlation length that controls covariance
+        between stations ( i.e. may be related to a characteristic scale length
+        of the medium if variations on this scale are not included in the
+        velocity model)
+        :type correlation_length: float
+        """
+
+        self.sigma_time = sigma_time
+        self.correlation_length = correlation_length
+
+    @classmethod
+    def init_default(cls):
+        sigma_time = 1E-3
+        correlation_length = 1E-3
+
+        return cls(sigma_time, correlation_length)
+
+    def __repr__(self):
+        return f'LOCGAU {self.sigma_time} {self.correlation_length}\n'
+
+
+__valid_location_methods__ = ['GAU_ANALYTIC', 'EDT', 'EDT_OT_WT',
+                              'EDT_OT_WT_ML']
+
+
+class LocationMethod:
+    def __init__(self, method, max_dist_sta_grid, min_number_phases,
+                 max_number_phases, min_number_s_phases, vp_vs_ratio,
+                 max_number_3d_grid_memory, min_dist_sta_grid):
+        """
+        container for location method
+        :param method: location method/algorithm ( GAU_ANALYTIC = the inversion
+        approach of Tarantola and Valette (1982) with L2-RMS likelihood
+        function. EDT = Equal Differential Time likelihood function cast into
+        the inversion approach of Tarantola and Valette (1982) EDT_OT_WT =
+        Weights EDT-sum probabilities by the variance of origin-time estimates
+        over all pairs of readings. This reduces the probability (PDF values)
+        at points with inconsistent OT estimates, and leads to more compact
+        location PDF's. EDT_OT_WT_ML = version of EDT_OT_WT with EDT
+        origin-time weighting applied using a grid-search, maximum-likelihood
+        estimate of the origin time. Less efficient than EDT_OT_WT which
+        uses simple statistical estimate of the origin time.)
+        :param max_dist_sta_grid: maximum distance in km between a station and the
+        center of the initial search grid; phases from stations beyond this
+        distance will not be used for event location
+        :param min_number_phases: minimum number of phases that must be
+        accepted before event will be located
+        :param max_number_phases: maximum number of accepted phases that will
+        be used for event location; only the first maxNumberPhases read from
+        the phase/observations file are used for location
+        :param min_number_s_phases: minimum number of S phases that must be
+        accepted before event will be located
+        :param vp_vs_ratio: P velocity to S velocity ratio. If VpVsRatio > 0.0
+        then only P phase travel-times grids are read and VpVsRatio is used to
+        calculate S phase travel-times. If VpVsRatio < 0.0 then S phase
+        travel-times grids are used.
+        :param max_number_3d_grid_memory: maximum number of 3D travel-time
+        grids to attempt to read into memory for Metropolis-Gibbs search. This
+        helps to avoid time-consuming memory swapping that occurs if the total
+        size of grids read exceeds the real memory of the computer. 3D grids
+        not in memory are read directly from disk. If maxNum3DGridMemory < 0
+        then NLLoc attempts to read all grids into memory.
+        :param min_dist_sta_grid: minimum distance in km between a station and
+        the center of the initial search grid; phases from stations closer than
+        this distance will not be used for event location
+        """
+
+        validate(method, __valid_location_methods__)
+        self.method = method
+
+        self.max_dist_sta_grid = max_dist_sta_grid
+        self.min_number_phases = min_number_phases
+        self.max_number_phases = max_number_phases
+        self.min_number_s_phases = min_number_s_phases
+        self.vp_vs_ratio = vp_vs_ratio
+        self.max_number_3d_grid_memory = max_number_3d_grid_memory
+        self.min_dist_sta_grid = min_dist_sta_grid
+
+    @classmethod
+    def init_default(cls):
+        method = 'EDT_OT_WT'
+        max_dist_sta_grid = 9999
+        min_number_phases = 6
+        max_number_phases = -1
+        min_number_s_phases = -1
+        vp_vs_ratio = -1
+        max_number_3d_grid_memory = 0
+        min_dist_sta_grid = 0
+
+        return cls(method, max_dist_sta_grid, min_number_phases,
+                   max_number_phases, min_number_s_phases, vp_vs_ratio,
+                   max_number_3d_grid_memory, min_dist_sta_grid)
+
+    def __repr__(self):
+        line = f'LOCMETH {self.method} {self.max_dist_sta_grid} ' \
+               f'{self.min_number_phases} {self.max_number_phases} ' \
+               f'{self.min_number_s_phases} {self.vp_vs_ratio}\n'
+
+        return line
+
+
+class Observations:
+    def __init__(self, picks, p_pick_error=1e-3, s_pick_error=1e-3):
+        """
+
+        :param picks: a list of pick object
+        :type picks: list of uquake.core.event.pick
+        :param p_pick_error: p-wave picking error in second
+        :param s_pick_error: s-wave picking error in second
+        """
+
+        self.picks = picks
+        self.p_pick_error = p_pick_error
+        self.s_pick_error = s_pick_error
+
+    @classmethod
+    def from_event(cls, event, p_pick_error=1e-3, s_pick_error=1e-3,
+                   origin_index=None):
+
+        if type(event) is Catalog:
+            event = event[0]
+            logger.warning('An object type Catalog was provided. Taking the '
+                           'first event of the catalog. This may lead to '
+                           'unwanted behaviour')
+
+        if origin_index is None:
+            if event.preferred_origin() is None:
+                logger.warning('The preferred origin is not defined. The last'
+                               'inserted origin will be use. This may lead '
+                               'to unwanted behaviour')
+
+                origin = event.origins[-1]
+            else:
+                origin = event.preferred_origin()
+        else:
+            origin = event.origins[origin_index]
+
+        picks = [arrival.get_pick() for arrival in origin.arrivals]
+
+        return cls(picks, p_pick_error=p_pick_error,
+                   s_pick_error=s_pick_error)
+
+    def __repr__(self):
+
+        lines = ''
+        for pick in self.picks:
+            if pick.evaluation_status == 'rejected':
+                continue
+
+            sensor = pick.sensor
+            instrument_identification = pick.waveform_id.channel_code[0:2]
+            component = pick.waveform_id.channel_code[-1]
+            phase_onset = 'e' if pick.onset in ['emergent', 'questionable'] \
+                else 'i'
+            phase_descriptor = pick.phase_hint.upper()
+            if pick.polarity is None:
+                first_motion = '?'
+            else:
+                first_motion = 'U' if pick.polarity.lower() == 'positive' \
+                    else 'D'
+            datetime_str = pick.time.strftime('%Y%m%d %H%M %S.%f')
+
+            error_type = 'GAU'
+            if pick.phase_hint.upper() == 'P':
+                pick_error = f'{self.p_pick_error:0.2e}'
+            else:
+                pick_error = f'{self.s_pick_error:0.2e}'
+
+            # not implemented
+            coda_duration = -1
+            amplitude = -1
+            period = -1
+            phase_weight = 1
+
+            line = f'{sensor:<6s} {instrument_identification:<4s} ' \
+                   f'{component:<4s} {phase_onset:1s} ' \
+                   f'{phase_descriptor:<6s} {first_motion:1s} ' \
+                   f'{datetime_str} {error_type} {pick_error} ' \
+                   f'{coda_duration:.2e} {amplitude:.2e} {period:.2e} ' \
+                   f'{phase_weight:d}\n'
+
+            lines += line
+
+        return lines
+
+    def write(self, file_name, path='.'):
+        with open(Path(path) / file_name) as file_out:
+            file_out.write(str(self))
+
+
+class LocFiles:
+    def __init__(self, velocity_file_path, travel_time_file_path, p_wave=True,
+                 swap_bytes_on_input=False):
+        """
+        Specifies the directory path and file root name (no extension), and
+        the wave type identifier for the input velocity grid and output
+        time grids.
+        :param velocity_file_path: full or relative path and file
+        root name (no extension) for input velocity grid (generated by
+        program Vel2Grid)
+        :type velocity_file_path: str
+        :param travel_time_file_path: full or relative path and file
+        root name (no extension) for output travel-time and take-off angle
+        grids
+        :type travel_time_file_path: str
+        :param p_wave: p-wave if True, s-wave if False
+        :type p_wave: bool
+        :param swap_bytes_on_input: flag to indicate if hi and low bytes of
+        input velocity grid file should be swapped
+        :type swap_bytes_on_input: bool
+        """
+
+        self.velocity_file_path = velocity_file_path
+        self.travel_time_file_path = travel_time_file_path
+        if p_wave:
+            self.phase = 'P'
+        else:
+            self.phase = 'S'
+
+        self.swap_bytes_on_input=int(swap_bytes_on_input)
+
+    def __repr__(self):
+        return f'GTFILES {self.velocity_file_path} ' \
+               f'{self.travel_time_file_path} {self.phase} ' \
+               f'{self.swap_bytes_on_input}'
+
+
+class GridTimeMode:
+    def __init__(self, grid_3d=True, calculate_angles=True):
+        """
+        Specifies several program run modes.
+        :param grid_3d: if True 3D grid if False 2D grid
+        :type grid_3d: bool
+        :param calculate_angles: if True calculate angles and not if False
+        :type calculate_angles: bool
+        """
+
+        if grid_3d:
+            self.grid_mode = 'GRID3D'
+        else:
+            self.grid_mode = 'GRID2D'
+
+        if calculate_angles:
+            self.angle_mode = 'ANGLES_YES'
+        else:
+            self.angle_mode = 'ANGLES_NO'
+
+    def __repr__(self):
+        return f'GTMODE {self.grid_mode} {self.angle_mode}'
+
+
+class Srces:
+    __valid_measurement_units__ = ['METERS', 'KILOMETERS']
+
+    def __init__(self, sensors=[], units='METERS'):
+        """
+        specifies a series of source location from an inventory object
+        :param sensors: a list of sensors containing at least the location,
+        and sensor label
+        :type sensors: list of dictionary
+
+        :Example:
+
+        >>> sensor = {'label': 'test', 'x': 1000, 'y': 1000, 'z': 1000,
+                      'elev': 0.0}
+        >>> sensors = [sensor]
+        >>> srces = Srces(srces)
+
+        """
+
+        validate(units, self.__valid_measurement_units__)
+        self.units = units
+
+        self.sensors = sensors
+
+    @classmethod
+    def from_inventory(cls, inventory):
+        """
+        create from an inventory object
+        :param inventory:
+        :type inventory: uquake.core.inventory.Inventory
+        """
+
+        srces = []
+        for sensor in inventory.sensors:
+            srce = {'label': sensor.code,
+                    'x': sensor.x,
+                    'y': sensor.y,
+                    'z': sensor.z,
+                    'elev': 0}
+            srces.append(srce)
+
+        return cls(srces)
+
+    def add_sensor(self, label, x, y, z, elev=0, units='METERS'):
+        """
+        Add a single sensor to the source list
+        :param label: sensor label
+        :type label: str
+        :param x: x location relative to geographic origin expressed
+        in the units of measurements for sensor/source
+        :type x: float
+        :param y: y location relative to geographic origin expressed
+        in the units of measurements for sensor/source
+        :type y: float
+        :param z: z location relative to geographic origin expressed
+        in the units of measurements for sensor/source
+        :type z: float
+        :param elev: elevation above z grid position (positive UP) in
+        kilometers for sensor (Default = 0)
+        :type elev: float
+        :param units: units of measurement used to express x, y, and z
+        ( 'METERS' or 'KILOMETERS')
+
+        """
+
+        validate(units.upper(), self.__valid_measurement_units__)
+
+        self.sensors.append({'label': label, 'x': x, 'y': y, 'z': z,
+                             elev:'elev'})
+
+        self.units = units.upper()
+
+    def __repr__(self):
+        line = ""
+
+        for sensor in self.sensors:
+
+            # test if sensor name is shorter than 6 characters
+
+            line += f'GTSRCE {sensor["label"]} XYZ ' \
+                    f'{sensor["x"] / 1000:>15.6f} ' \
+                    f'{sensor["y"] / 1000:>15.6f} ' \
+                    f'{sensor["z"] / 1000:>15.6f} ' \
+                    f'0.00\n'
+
+        return line
+
+    @property
+    def locs(self):
+        seeds = []
+        for sensor in self.sensors:
+            seeds.append([sensor['x'], sensor['y'], sensor['z']])
+        return np.array(seeds)
+
+    @property
+    def labels(self):
+        seed_labels = []
+        for sensor in self.sensors:
+            seed_labels.append(sensor['label'])
+
+        return np.array(seed_labels)
+
+
+__observation_file_types__ = ['NLLOC_OBS', 'HYPO71', 'HYPOELLIPSE',
+                              'NEIC', 'CSEM_ALERT', 'SIMULPS', 'HYPOCENTER',
+                              'HYPODD', 'SEISAN', 'NORDIC', 'NCSN_Y2K_5',
+                              'NCEDC_UCB', 'ETH_LOC', 'RENASS_WWW',
+                              'RENASS_DEP', 'INGV_BOLL', 'INGV_BOLL_LOCAL',
+                              'INGV_ARCH']
+
+
+class ProjectManager(object):
+
+    inventory_file_name = 'inventory.xml'
+
+    def __init__(self, path, project_name, network_code, use_srces=False):
+        """
+        Interface to manage project providing an interface to selected
+        components of the NonLinLoc software by Anthony Lomax.
+
+        :param path: base path
+        :type path: str
+        :param project_name: project name or id
+        :type project_name: str
+        :param network_code: network name or id
+        :type network_code: str
+        :program use_srces: if True use the srces files instead of the the
+        inventory file should both files be present (default=False)
+        :Example:
+        >>> from nlloc import nlloc
+        # initialize the project with the root path of the project,
+        the project and the network names
+        >>> project_name = 'test'
+        >>> network_code = 'test'
+        >>> root_path='.'
+        >>> pm = nlloc.ProjectManager(root_path, project_name, network_code)
+        # this will initialize the project and create a specific directory
+        # structure if the directories do not exist.
+
+        # add an inventory file to the project
+        >>> path_to_uquake_inventory_file = 'PATH/TO/THE/INVENTORY/FILE.xml'
+
+        ..note :: the uquake inventory object inherit from the obspy inventory
+                  and
+                  behaves in a very similar way. It, however, differs from
+                  its parent has it implements properties specific to local
+                  earthquake who are either expressed using UTM coordinates
+                  system or a local coordinates system that cannot necessarily
+                  be translated to latitude and longitude. Beyond this minor
+                  difference, uquake inventory structure also differs from
+                  the standard inventory and implements a slightly different
+                  hierarchy more representative of mine monitoring systems.
+                  The uquake Inventory object hierarchy is as follows:
+                 1. Inventory
+                    1.1. Networks: A seismic network. a network includes at
+                                   least one data acquisition station.
+                        1.1.1 Stations: A place where the data acquisition is
+                                        performed. For instance, station
+                                        usually includes power, communication
+                                        and data acquisition equipment. One
+                                        or more sensor can be connected to a
+                                        station.
+                            1.1.1.1 Sensors: A instrument converting a
+                                             physical phenomenon to data either
+                                             digital or analog. A sensor
+                                             comprises one or more channel.
+                                1.1.1.1.1 Channels: A channel is a the smallest
+                                                    unit of measuring.
+
+
+        >>> inventory = read_inventory(path_to_uquake_inventory_file)
+        >>> pm.add_inventory(inventory)
+
+        # alternatively, sensors can be added to the using the srces object.
+        # Sensors can be added this way from a nlloc.nlloc.Srces object using
+        the .add_srces method.
+        ..note:: srces stands for sources and it is the nomenclature used in
+                 NonLinLoc. This might be a soure of confusion for the users.
+                 In addition, what NonLinLoc refers to as station is called a
+                 sensors in this context.
+
+        # srces object can be constructed from an inventory as follows:
+        >>> srces = Srces.from_inventory(inventory)
+        # alternatively, each sensors can be added individually using the
+        .add_sensor method. As follows:
+        >>> srces = Srces()
+        >>> x = 250
+        >>> y = 250
+        >>> z = 250
+        >>> elevation = 0
+        >>> srces.add_sensor('sensor label', x, y, z, elev=elevation)
+
+        # Srces can be added to the project as follows:
+        >>> pm.add_srces(srces)
+
+        # add the velocity models to the project. P- and S-wave velocity models
+        can be added separately from a nlloc.grid.VelocityGrid3D
+        using the .add_velocity method or from a nlloc.grid.VelocityEnsemble
+        object using the .add_velocities method
+
+        >>> origin = [0, 0, 0]
+        >>> spacing = [25, 25, 25]
+        >>> dimensions = [100, 100, 100]
+
+        >>> nlloc.grid.VelocityGrid3D()
+        >>> vp = 5000  # P-wave velocity in m/s
+        >>> vs = 3500  # S-wave velocity in m/s
+        >>> p_velocity = nlloc.grid.VelocityGrid3D(network_code, dimensions,
+        >>>                                        origin, spacing, phase='P',
+        >>>                                        value=5000)
+        >>> s_velocity = nlloc.grid.VelocityGrid3D(network_code, dimensions,
+        >>>                                        origin, spacing, phase='S',
+        >>>                                        value=5000 )
+        >>> pm.add_velocity(p_velocity)
+        >>> pm.add_velocity(s_velocity)
+        # Alternatively
+        >>> velocities = nlloc.grid.VelocityGridEnsemble(p_velocity,
+        >>>                                              s_velocity)
+        >>> pm.add_velocities(velocities)
+        # Adding a velocity model of the velocity models triggers the
+        # calculation of the travel time grids.
+        # It is possible to manually trigger the calculation of the travel
+        # time grid by invoking
+        >>> pm.init_travel_time_grid()
+        # this should not, however, be required.
+
+        # prior to running the location, NonLinLoc need to be configured.
+        # configuring NonLinLoc can be done using the nlloc.nlloc.NonLinLoc
+        # object
+        >>> nonlinloc = nlloc.nlloc.NonLinLoc()
+        # this will initialize the nonlinloc object sith default value. Those
+        # value have been used to locate seismic events in a volumes of
+        # approximately 3000 m x 3000 m x 1500 m. The parameters should be
+        # provide adequate results for volumes of similar scale but would need
+        # to be adapted to smaller or larger volumes.
+
+        """
+
+        self.project_name = project_name
+        self.network_code = network_code
+        self.root_directory = Path(path) / project_name / network_code
+        # create the directory if it does not exist
+        self.root_directory.mkdir(parents=True, exist_ok=True)
+
+        self.inventory_location = self.root_directory / 'inventory'
+        self.inventory_location.mkdir(parents=True, exist_ok=True)
+        self.inventory_file = self.inventory_location / 'inventory.xml'
+        self.srces_file = self.inventory_location / 'srces.pickle'
+
+        self.srces = None
+        self.inventory = None
+        if (not self.inventory_file.exists()) and \
+                (not self.srces_file.exists()):
+            logger.warning('the project does not contain an inventory file nor'
+                           'an srces file. to add an inventory file use '
+                           'the add_inventory method. Alternatively, sensors '
+                           'information can be provided using an Srces object.'
+                           'Note, however, that an Srces object only contains'
+                           'the sensors location information. When '
+                           'the inventory file is present, the Srces object '
+                           'is automatically constructed from the inventory.'
+                           'A Srces object can be added using the add_srces '
+                           'method. If both the Srces and inventory files are'
+                           'present in the project directory, the inventory'
+                           'file takes precedence and the srces file is'
+                           'ignored unless')
+
+        elif self.srces_file.exists() and use_srces:
+            with open(self.srces_file, 'rb') as srces_file:
+                logger.info('srces will be read from the file and not build'
+                            'from the inventory file')
+                self.srces = pickle.load(srces_file)
+
+            if self.inventory_file.exists():
+                self.inventory = read_inventory(str(self.inventory_file))
+
+        elif self.inventory_file.exists():
+            self.inventory = read_inventory(str(self.inventory_file))
+            self.srces = Srces.from_inventory(self.inventory)
+            logger.info('srces will be build from the inventory file. The '
+                        'srces.pickle file will be replaced.')
+            with open(self.srces_file, 'wb') as srces_file:
+                pickle.dump(self.srces, srces_file)
+
+        elif self.srces_file.exists():
+            logger.info('no inventory file in the project. srces file will be '
+                        'used instead.')
+            with open(self.srces_file, 'rb') as srces_file:
+                self.srces = pickle.load(srces_file)
+
+        self.velocity_grid_location = self.root_directory / 'velocities'
+        self.velocity_grid_location.mkdir(parents=True, exist_ok=True)
+
+        p_vel_base_name = grid.VelocityGrid3D.get_base_name(network_code, 'P')
+        self.p_velocity_file = self.velocity_grid_location / p_vel_base_name
+        p_files = self.velocity_grid_location.glob(f'{p_vel_base_name}*')
+        if len(list(p_files)) == 0:
+            logger.warning('the project does not contain a p-wave velocity '
+                           'model. to add a p-wave velocity model to the '
+                           'project please use the add_velocity or '
+                           'add_velocities methods.')
+            self.p_velocity = None
+
+        else:
+            self.p_velocity = grid.read_grid(p_vel_base_name,
+                                             path=str(
+                                                 self.velocity_grid_location))
+
+        s_vel_base_name = grid.VelocityGrid3D.get_base_name(self.network_code,
+                                                            'S')
+        self.s_velocity_file = self.velocity_grid_location / s_vel_base_name
+        s_files = self.velocity_grid_location.glob(f'{s_vel_base_name}*')
+        if len(list(s_files)) == 0:
+            logger.warning('the project does not contain a s-wave velocity '
+                           'model. to add a s-wave velocity model to the '
+                           'project please use the add_velocity or '
+                           'add_velocities methods.')
+            self.s_velocity = None
+        else:
+            self.s_velocity = grid.read_grid(s_vel_base_name,
+                                             path=str(
+                                                 self.velocity_grid_location))
+
+        self.velocities = None
+        if (self.p_velocity is not None) and (self.s_velocity is not None):
+            self.velocities = grid.VelocityGridEnsemble(self.p_velocity,
+                                                        self.s_velocity)
+
+        self.travel_time_grid_location = self.root_directory / 'times'
+        self.travel_time_grid_location.mkdir(parents=True, exist_ok=True)
+        file_list = list(self.travel_time_grid_location.glob('*time*'))
+        if len(file_list) == 0:
+            logger.warning('the project does not contain travel time grids. '
+                           'to initialize the travel-time grid use the '
+                           'init_travel_time_grid method. Note that '
+                           'this require the project to contain both '
+                           'an inventory and a velocities files.')
+
+            self.travel_times = None
+
+        else:
+            self.travel_times = grid.TravelTimeEnsemble.from_files(
+                self.travel_time_grid_location)
+
+        self.obs_path = self.root_directory / 'observations'
+        self.obs_path.mkdir(parents=True, exist_ok=True)
+
+        self.run_id = str(uuid4())
+        self.current_run_directory = self.root_directory / 'run' / self.run_id
+        self.current_run_directory.mkdir(parents=True, exist_ok=False)
+
+        self.location_grid = None
+
+    def init_travel_time_grid(self):
+        """
+        initialize the travel time grids
+        """
+        seeds = self.srces.locs
+        seed_labels = self.srces.labels
+
+        if self.srces is None:
+            return
+
+        if self.p_velocity:
+            tt_gs_p = self.p_velocity.to_time_multi_threaded(seeds,
+                                                             seed_labels)
+
+        if self.s_velocity:
+            tt_gs_s = self.s_velocity.to_time_multi_threaded(seeds,
+                                                             seed_labels)
+
+        if self.p_velocity and self.s_velocity:
+            self.travel_times = tt_gs_p + tt_gs_s
+
+        elif self.p_velocity:
+            logger.warning('s-wave velocity model is not set, travel-times '
+                           'will'
+                           'will be generated for ')
+            self.travel_times = tt_gs_p
+
+        elif self.s_velocity:
+            self.travel_times = tt_gs_s
+
+        else:
+            return
+
+        # cleaning the directory before writing the new files
+
+        for fle in self.travel_time_grid_location.glob('*time*'):
+            fle.unlink(missing_ok=True)
+
+        self.travel_times.write(self.travel_time_grid_location)
+
+    def add_inventory(self, inventory, create_srces_file=True):
+        """
+        adding a inventory object to the project
+        :param inventory: station xml inventory object
+        :type inventory: uquake.core.inventory.Inventory
+        :param create_srces_file: if True create or replace the srces file
+        :return:
+        """
+
+        inventory.write(str(self.inventory_file))
+        self.srces = Srces.from_inventory(inventory)
+        if create_srces_file:
+            with open(self.srces_file, 'wb') as srces_file:
+                pickle.dump(self.srces, srces_file)
+
+        self.init_travel_time_grid()
+
+    def add_srces(self, srces, force=False):
+        """
+        add a list of sources to the projects
+        :param srces: list of sources or sensors
+        :param force: force the insertion of the srces object if an inventory
+        file is present
+        :type srces: Srces
+        """
+
+        if not isinstance(srces, Srces):
+            raise TypeError(f'Expecting type {Srces}, given '
+                            f'{type(srces)}')
+
+        if self.inventory is not None:
+            logger.warning('The project already has an inventory file!')
+            if not force:
+                logger.warning('exiting...')
+                return
+            else:
+                logger.warning('the force flag value is True, srces object '
+                               'will be added.')
+
+        self.srces = srces
+        with open(self.srces_file, 'wb') as srces_file:
+            pickle.dump(self.srces, srces_file)
+
+        self.init_travel_time_grid()
+
+    def add_velocities(self, velocities, initialize_travel_time=True):
+        """
+        add P- and S-wave velocity models to the project
+        :param velocities: velocity models
+        :type velocities: nlloc.grid.VelocityEnsemble
+        :param initialize_travel_time: if True, initialize the travel time
+        grid
+        :return:
+        """
+
+        # velocities.write(path=self.velocity_grid_location)
+
+        self.velocities = velocities
+
+        for key in velocities.keys():
+            self.add_velocity(velocities[key],
+                              initialize_travel_time=False)
+
+        if initialize_travel_time:
+            self.init_travel_time_grid()
+
+    def add_velocity(self, velocity, initialize_travel_time=True):
+        """
+        add P- or S-wave velocity model to the project
+        :param velocity: p-wave velocity model
+        :type velocity: nlloc.grid.VelocityGrid3D
+        :param initialize_travel_time: if true initialize the travel time grids
+        :return:
+        """
+
+        velocity.write(path=self.velocity_grid_location)
+
+        if velocity.phase.upper() == 'P':
+            self.p_velocity = velocity
+
+        else:
+            self.s_velocity = velocity
+
+        if initialize_travel_time:
+            self.init_travel_time_grid()
+
+    def add_observations(self, observations):
+        """
+        adding observations to the project
+        :param observations: Observations
+        :return:
+        """
+        self.current_run_directory.mkdir(parents=True, exist_ok=True)
+        observations.write('observations.obs',
+                           path=self.current_run_directory)
+
+    def clean_run(self):
+        """
+        remove the files and directory related to a particular run id and
+        create a new run id and related directory.
+        :return:
+        """
+        logger.info(f'removing {self.current_run_directory}')
+        for item in list(self.current_run_directory.glob('*')):
+            item.unlink()
+        self.current_run_directory.rmdir()
+        self.run_id = str(uuid4())
+        self.current_run_directory = self.root_directory / 'run' / self.run_id
+
+    def clean_project(self):
+        pass
+
+    def build_nlloc_control(self):
+        # checking if all the required elements have been added to the project
+        pass
+
+    def create_control_file(self, search_method=None, location_method=None,
+                            gaussian_model_errors=None, control=None,
+                            geographic_transformation=None, signature=None,
+                            comment=None):
+
+        """
+
+        :param control:
+        :param geographic_transformation:
+        :param signature:
+        :param comment:
+        :return:
+
+        control
+        geographic_transformation
+        signature
+        comment
+        locsrce
+        locfiles
+        locsearch
+        locmeth
+        locgau
+        locgau2 - optional
+        locphaseid - optional
+        locqualerr - optional
+        locgrid
+
+        """
+
+        control_str = ''
+
+        if control is None:
+            control = Control()
+
+        if geographic_transformation is None:
+            geographic_transformation = GeographicTransformation()
+
+
+
+
+
+
+
+
+
+        signature = f'LOCSIG {signature}\n'
+        comment = f'LOCCOM {comment}\n'
+
+        ctrl_file = '\n'.join(str(control), str(geographic_transformation),
+                              signature, comment, str(search_method),
+                              str(location_method), str(gaussian_model_errors))
+
+    def init_default(self):
+        Control
+
+
+
+class InputFiles:
+    def __init__(self, observation_files, travel_time_file_root,
+                 output_file_root, observation_file_type='NLLOC_OBS',
+                 i_swap_bytes=False, create_missing_folders=True):
+        """
+        Specifies the directory path and filename for the phase/observation
+        files, and the file root names (no extension) for the input time grids
+        and the output files.
+
+        the path where the files are to be located is
+
+        :param observation_files: full or relative path and name for
+        phase/observations files, mulitple files may be specified with
+        standard UNIX "wild-card" characters ( * and ? )
+        :type observation_files: str
+        :param observation_file_type: (choice: NLLOC_OBS HYPO71 HYPOELLIPSE
+        NEIC CSEM_ALERT SIMULPS HYPOCENTER HYPODD SEISAN NORDIC NCSN_Y2K_5
+        NCEDC_UCB ETH_LOC RENASS_WWW RENASS_DEP INGV_BOLL
+        INGV_BOLL_LOCAL INGV_ARCH) format type for phase/observations files
+        (see Phase File Formats) - DEFAULT NLLOC_OBS
+        :type observation_file_type: str
+        :param travel_time_file_root: full or relative path and file root name
+        (no extension) for input time grids (generated by program Grid2Time,
+        edu.sc.seis.TauP.TauP_Table_NLL, or other software.
+        :type travel_time_file_root: str
+        :param output_file_root: full or relative path and file root name
+        (no extension) for output files
+        :type output_file_root: str
+        :param i_swap_bytes: flag to indicate if hi and low bytes of input
+        time grid files should be swapped. Allows reading of travel-time grids
+        from different computer architecture platforms during TRANS GLOBAL mode
+        location. DEFAULT=False
+        :type i_swap_bytes: bool
+        :param create_missing_folders: if True missing folder will be created
+        """
+
+        # validate if the path exist if the path does not exist the path
+        # should be created
+        observation_files = Path(observation_files)
+        if not observation_files.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{observation_files.parent}> does '
+                               f'not exist. missing folders will be created')
+                observation_files.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{observation_files.parent}> does not '
+                              f'exist')
+
+        self.observation_files = observation_files
+
+        travel_time_file_root = Path(travel_time_file_root)
+        if not travel_time_file_root.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{travel_time_file_root.parent}> '
+                               f'does not exist. missing folders will '
+                               f'be created')
+
+                travel_time_file_root.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{travel_time_file_root.parent}> does '
+                              f'not exist')
+
+        self.travel_time_file_root = travel_time_file_root
+
+        output_file_root = Path(output_file_root)
+
+        if not output_file_root.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{output_file_root.parent}> '
+                               f'does not exist. missing folders will '
+                               f'be created')
+
+                output_file_root.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{output_file_root.parent}> does '
+                              f'not exist')
+
+        self.output_file_root = output_file_root
+
+        validate(observation_file_type, __observation_file_types__)
+        self.observation_file_type = observation_file_type
+
+        self.i_swap_bytes = i_swap_bytes
+
+    def __repr__(self):
+        line = f'LOCFILES {self.observation_files} ' \
+               f'{self.observation_file_type} {self.travel_time_file_root} ' \
+               f'{self.output_file_root} {int(self.i_swap_bytes)}\n'
+        return line
 
 
 class NLLocCtrlFile:

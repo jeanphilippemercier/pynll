@@ -957,6 +957,24 @@ class TravelTimeEnsemble:
         line = f'Number of travel time grids: {len(self)}'
         return line
 
+    @classmethod
+    def from_files(cls, path):
+        """
+        create a travel time ensemble from files located in a directory
+        :param path: the base path to the directory containing the travel time
+        files.
+        :return:
+        """
+        tt_grids = []
+        for fle in Path(path).glob('*time*.hdr'):
+            path = fle.parent
+            base_name = '.'.join(fle.name.split('.')[:-1])
+            tt_grid = read_grid(str(base_name), path=str(path),
+                                float_type=__default_float_type__)
+            tt_grids.append(tt_grid)
+
+        return cls(tt_grids)
+
     def select(self, seed_labels=None):
         """
         return the a list of grid corresponding to seed_labels.
