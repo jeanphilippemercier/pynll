@@ -1097,6 +1097,94 @@ class Srces:
         return np.array(seed_labels)
 
 
+__valid_search_grid_type__ = ['MISFIT', 'PROB_DENSITY']
+
+class LocGrid(object):
+    def __init__(self, dim_x, dim_y, dim_z, origin_x, origin_y, origin_z,
+                 spacing_x, spacing_y, spacing_z, grid_type='PROB_DENSITY',
+                 save=False, units='METERS'):
+        """
+        Specifies the size and other parameters of an initial or nested 3D
+        search grid. The order of LOCGRID statements is critical (see Notes).
+        repeatable
+        :param dim_x: number of grid nodes in the x direction
+        :param dim_y: number of grid nodes in the y direction
+        :param dim_z: number of grid nodes in the z direction
+        :param origin_x: x location of the grid origin in km
+        relative to the geographic origin. Use a large, negative value
+        ( i.e. -1.0e30 ) to indicate automatic positioning of grid along
+        corresponding direction (valid for nested grids only, may not be used
+        for initial grid).
+        :param origin_y: y location of the grid origin in km
+        relative to the geographic origin.
+        :param origin_z: z location of the grid origin in km
+        relative to the geographic origin.
+        :param spacing_x: grid node spacing in kilometers along the x axis
+        :param spacing_y: grid node spacing in kilometers along the y axis
+        :param spacing_z: grid node spacing in kilometers along the z axis
+        :param grid_type: (choice: MISFIT PROB_DENSITY) statistical quantity to
+        calculate on grid
+        :param save: specifies if the results of the search over this grid
+        should be saved to disk (Default: False)
+        :type save: bool
+        :param units: (choice: 'METERS', 'KILOMETERS') grid units
+        (Default 'METERS')
+        """
+
+        self.dim_x = dim_x
+        self.dim_y = dim_y
+        self.dim_z = dim_z
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self.origin_z = origin_z
+        self.spacing_x = spacing_x
+        self.spacing_y = spacing_y
+        self.spacing_z = spacing_z
+        validate(grid_type, __valid_search_grid_type__)
+        self.grid_type = grid_type
+        self.save = save
+        self.units = units
+
+    @classmethod
+    def init_from_grid(cls, input_grid, grid_type='PROB_DENSITY', save=False):
+        """
+
+        :param input_grid:
+        :type input_grid: nlloc.grid.NLLocGrid
+        :param grid_type: (choice: MISFIT PROB_DENSITY) statistical quantity to
+        calculate on grid
+        :param save: specifies if the results of the search over this grid
+        should be saved to disk (Default: False)
+        :return:
+        """
+        dims = input_grid.dims
+        origin = input_grid.origin
+        spacing = input_grid.spacing
+        units = input_grid.grid_units
+
+        return cls(dims[0], dims[1], dims[2], origin[0], origin[1], origin[2],
+                   spacing[0], spacing[1], spacing[2], units=units,
+                   grid_type=grid_type, save=save)
+
+    def __repr__(self):
+        div = 1
+        if self.units == 'METERS':
+            div = 1000
+
+        if self.save:
+            save_flag = 'SAVE'
+        else:
+            save_flag = 'NO_SAVE'
+
+        repr = f'LOCGRID {self.dim_x} {self.dim_y} {self.dim_z} ' \
+               f'{self.origin_x / div} {self.oring_y / div} ' \
+               f'{self.origin_z / div} ' \
+               f'{self.spacing_x / div} {self.spacing_y / div} ' \
+               f'{self.spacing_z / div} {self.grid_type} {save_flag}\n'
+
+        return repr
+
+
 __observation_file_types__ = ['NLLOC_OBS', 'HYPO71', 'HYPOELLIPSE',
                               'NEIC', 'CSEM_ALERT', 'SIMULPS', 'HYPOCENTER',
                               'HYPODD', 'SEISAN', 'NORDIC', 'NCSN_Y2K_5',
@@ -1245,6 +1333,7 @@ class ProjectManager(object):
 
         self.srces = None
         self.inventory = None
+
         if (not self.inventory_file.exists()) and \
                 (not self.srces_file.exists()):
             logger.warning('the project does not contain an inventory file nor'
@@ -1341,11 +1430,26 @@ class ProjectManager(object):
         self.obs_path = self.root_directory / 'observations'
         self.obs_path.mkdir(parents=True, exist_ok=True)
 
+        self.output_file_path = self.root_directory / 'output'
+        self.output_file_path.mkdir(parents=True, exist_ok=True)
+
         self.run_id = str(uuid4())
         self.current_run_directory = self.root_directory / 'run' / self.run_id
         self.current_run_directory.mkdir(parents=True, exist_ok=False)
 
-        self.location_grid = None
+        self.template_directory = self.root_directory / 'templates'
+
+        self.template_directory.mkdir(parents=True, exist_ok=True)
+
+        self.template_ctrl_file = self.template_directory / \
+                                  'ctrl_template.pickle'
+
+        if self.template_ctrl_file.exists():
+            with open(self.template_ctrl_file, 'rb') as template_ctrl:
+                self.control_template = pickle.load(template_ctrl)
+        else:
+            self.control_template = self.add_template_control()
+
 
     def init_travel_time_grid(self):
         """
@@ -1404,13 +1508,19 @@ class ProjectManager(object):
 
         self.init_travel_time_grid()
 
-    def add_srces(self, srces, force=False):
+    def add_srces(self, srces, force=False, initialize_travel_time=True):
         """
         add a list of sources to the projects
         :param srces: list of sources or sensors
         :param force: force the insertion of the srces object if an inventory
         file is present
+        :param initialize_travel_time: if True, initialize the travel time
+        grid
         :type srces: Srces
+
+        ..warning:: travel time should be initialized when the sensors/srces
+        are updated. Not doing so, may cause the sensors/source and the
+        travel time grids to be incompatible.
         """
 
         if not isinstance(srces, Srces):
@@ -1430,6 +1540,12 @@ class ProjectManager(object):
         with open(self.srces_file, 'wb') as srces_file:
             pickle.dump(self.srces, srces_file)
 
+        if initialize_travel_time:
+            self.init_travel_time_grid()
+        else:
+            logger.warning('the inventory and the travel time grids might'
+                           'be out of sync.')
+
         self.init_travel_time_grid()
 
     def add_velocities(self, velocities, initialize_travel_time=True):
@@ -1439,7 +1555,10 @@ class ProjectManager(object):
         :type velocities: nlloc.grid.VelocityEnsemble
         :param initialize_travel_time: if True, initialize the travel time
         grid
-        :return:
+
+        ..warning:: travel time should be initialized when the sensors/srces
+        are updated. Not doing so, may cause the sensors/source and the
+        travel time grids to be incompatible.
         """
 
         # velocities.write(path=self.velocity_grid_location)
@@ -1452,6 +1571,9 @@ class ProjectManager(object):
 
         if initialize_travel_time:
             self.init_travel_time_grid()
+        else:
+            logger.warning('the inventory and the travel time grids might'
+                           'be out of sync.')
 
     def add_velocity(self, velocity, initialize_travel_time=True):
         """
@@ -1459,7 +1581,10 @@ class ProjectManager(object):
         :param velocity: p-wave velocity model
         :type velocity: nlloc.grid.VelocityGrid3D
         :param initialize_travel_time: if true initialize the travel time grids
-        :return:
+
+        ..warning:: travel time should be initialized when the sensors/srces
+        are updated. Not doing so, may cause the sensors/source and the
+        travel time grids to be incompatible.
         """
 
         velocity.write(path=self.velocity_grid_location)
@@ -1472,22 +1597,26 @@ class ProjectManager(object):
 
         if initialize_travel_time:
             self.init_travel_time_grid()
+        else:
+            logger.warning('the inventory and the travel time grids might'
+                           'be out of sync.')
 
-    def add_observations(self, observations):
+    def add_observations(self, observations,
+                         observation_file_name='observation.obs'):
         """
         adding observations to the project
         :param observations: Observations
-        :return:
+        :param observation_file_name: name of the observation file
+        (default: observation.obs
         """
         self.current_run_directory.mkdir(parents=True, exist_ok=True)
-        observations.write('observations.obs',
-                           path=self.current_run_directory)
+        observations.write(observation_file_name,
+                           path=self.obs_path)
 
     def clean_run(self):
         """
         remove the files and directory related to a particular run id and
         create a new run id and related directory.
-        :return:
         """
         logger.info(f'removing {self.current_run_directory}')
         for item in list(self.current_run_directory.glob('*')):
@@ -1499,68 +1628,88 @@ class ProjectManager(object):
     def clean_project(self):
         pass
 
-    def build_nlloc_control(self):
-        # checking if all the required elements have been added to the project
-        pass
+    def add_template_control(self, control=Control(),
+                             transformation=GeographicTransformation(),
+                             locsig=None, loccom=None,
+                             locsearch=LocSearchOctTree.init_default(),
+                             locmeth=LocationMethod.init_default(),
+                             locgau=GaussianModelErrors.init_default(),
+                             **kwargs):
 
-    def create_control_file(self, search_method=None, location_method=None,
-                            gaussian_model_errors=None, control=None,
-                            geographic_transformation=None, signature=None,
-                            comment=None):
+        if not isinstance(control, Control):
+            raise TypeError(f'control is type {type(control)}. '
+                            f'control must be type {Control}.')
 
-        """
+        if not issubclass(transformation, GeographicTransformation):
+            raise TypeError(f'transformation is type {type(transformation)}. '
+                            f'expecting type'
+                           f'{GeographicTransformation}.')
 
-        :param control:
-        :param geographic_transformation:
-        :param signature:
-        :param comment:
-        :return:
+        if not locseach.type == 'LOCSEARCH':
+            raise TypeError(f'locsearch is type {type(locsearch)}'
+                            f'expecting type '
+                            f'{LocSearchGrid} '
+                            f'{LocSearchMetropolis}, or '
+                            f'{LocSearchOctTree}.')
 
-        control
-        geographic_transformation
-        signature
-        comment
-        locsrce
-        locfiles
-        locsearch
-        locmeth
-        locgau
-        locgau2 - optional
-        locphaseid - optional
-        locqualerr - optional
-        locgrid
+        if not isinstance(locmeth, LocationMethod):
+            raise TypeError(f'locmeth is type {type(locmeth)}, '
+                            f'expecting type {LocationMethod}')
 
-        """
-
-        control_str = ''
-
-        if control is None:
-            control = Control()
-
-        if geographic_transformation is None:
-            geographic_transformation = GeographicTransformation()
+        if not isinstance(locgau, GaussianModelErrors):
+            raise TypeError(f'locgau is type {type(locgau)}')
 
 
+        dict_out = {'control': control,
+                    'transformation': transformation,
+                    'locsig': locsig,
+                    'loccom': loccom,
+                    'locsearch': locsearch,
+                    'locmeth': locmeth,
+                    'locgau': locgau}
 
+        with open(self.template_ctrl_file, 'wb') as template_ctrl:
+            pickle.dump(dict_out, template_ctrl)
 
+        self.control_template = dict_out
 
+        return dict_out
 
-
-
-
-        signature = f'LOCSIG {signature}\n'
-        comment = f'LOCCOM {comment}\n'
-
-        ctrl_file = '\n'.join(str(control), str(geographic_transformation),
-                              signature, comment, str(search_method),
-                              str(location_method), str(gaussian_model_errors))
-
-    def init_default(self):
-        Control
+    def run(self):
+        ctrl = ''
+        ctrl += str(self.control_template['control'])
 
 
 
-class InputFiles:
+    @property
+    def build_nlloc_control():
+        # Building with default values
+        ctrl = ''
+        ctrl += str(Control())
+        ctrl += str(GeographicTransformation()) + '\n'
+        ctrl += 'LOCSIG pynlloc uquake development team\n\n'
+        ctrl += str(self.srces) + '\n'
+        ctrl += self.nlloc_files + '\n'
+        ctrl += LocSearchOctTree.init_default()
+        ctrl += LocationMethod.init_default()
+        ctrl += GaussianModelErrors.init_default()
+
+        shape = self.p_velocity.shape
+        origin = self.p_velocity.origin / 1000
+        spacing = self.p_velocity.spacing / 1000
+        ctrl.
+
+    @property
+    def nlloc_files(self):
+        observation_files = Path(self.obs_path / '*')
+        travel_time_file_root = grid.TTGrid.base_name()
+        travel_time_files = Path(self.travel_time_grid_location) / \
+                            travel_time_file_root
+        return NllocInputFiles(observation_files, travel_time_files,
+                               self.self.output_file_path)
+
+
+class NllocInputFiles:
     def __init__(self, observation_files, travel_time_file_root,
                  output_file_root, observation_file_type='NLLOC_OBS',
                  i_swap_bytes=False, create_missing_folders=True):
@@ -1582,8 +1731,7 @@ class InputFiles:
         (see Phase File Formats) - DEFAULT NLLOC_OBS
         :type observation_file_type: str
         :param travel_time_file_root: full or relative path and file root name
-        (no extension) for input time grids (generated by program Grid2Time,
-        edu.sc.seis.TauP.TauP_Table_NLL, or other software.
+        (no extension) for input time grids.
         :type travel_time_file_root: str
         :param output_file_root: full or relative path and file root name
         (no extension) for output files

@@ -39,7 +39,7 @@ control = nlloc.Control()
 
 geographic_transformation = nlloc.GeographicTransformation()
 sensors = nlloc.Srces.from_inventory(get_inventory())
-files = nlloc.InputFiles(observation_files, travel_time_root,
+files = nlloc.NllocInputFiles(observation_files, travel_time_root,
                          output_file_root)
 
 # tt_grids = get_travel_time_grids()
