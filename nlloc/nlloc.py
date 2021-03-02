@@ -327,7 +327,7 @@ class NonLinLoc:
 
         if ((not isinstance(trans,
                             GeographicTransformation)) |
-            (not issubclass(trans,
+            (not issubclass(type(trans),
                             GeographicTransformation))):
             raise TypeError(f'trans must be a class or '
                             f'subclass type or subclass of '
@@ -641,7 +641,7 @@ class LocSearchMetropolis:
 
 class LocSearchOctTree:
     def __init__(self, init_num_cell_x, init_num_cell_y, init_num_cell_z,
-                 min_node_size, max_node_size, num_scatter,
+                 min_node_size, max_num_nodes, num_scatter,
                  use_station_density=False, stop_on_min_node_size=True):
         """
         Container for the Octree Location algorithm parameters
@@ -681,8 +681,8 @@ class LocSearchOctTree:
         the octree search is terminated after a node with a side smaller
         than this length is generated
         :type min_node_size: float
-        :param max_node_size: total number of nodes to process
-        :type max_node_size: int
+        :param max_num_nodes: total number of nodes to process
+        :type max_num_nodes: int
         :param num_scatter: the number of scatter samples to draw from the
         octtree results
         :type num_scatter: int
@@ -703,7 +703,7 @@ class LocSearchOctTree:
         self.init_num_cell_y = init_num_cell_y
         self.init_num_cell_z = init_num_cell_z
         self.min_node_size = min_node_size
-        self.max_node_size = max_node_size
+        self.max_num_nodes = max_num_nodes
         self.num_scatter = num_scatter
         self.use_station_density = use_station_density
         self.stop_on_min_node_size = stop_on_min_node_size
@@ -714,12 +714,12 @@ class LocSearchOctTree:
         init_num_cell_y = 5
         init_num_cell_z = 5
         min_node_size = 1E-6
-        max_node_size = 5000
+        max_num_nodes = 5000
         num_scatter = 500
         use_station_density = False
         stop_on_min_node_size = True
         return cls(init_num_cell_x, init_num_cell_y, init_num_cell_z,
-                   min_node_size, max_node_size, num_scatter,
+                   min_node_size, max_num_nodes, num_scatter,
                    use_station_density, stop_on_min_node_size)
 
     def __repr__(self):
@@ -882,8 +882,8 @@ class Observations:
 
         picks = [arrival.get_pick() for arrival in origin.arrivals]
 
-        return cls(picks, p_pick_error=p_pick_error,
-                   s_pick_error=s_pick_error)
+        return cls.__init__(picks, p_pick_error=p_pick_error,
+                            s_pick_error=s_pick_error)
 
     def __repr__(self):
 
@@ -929,7 +929,7 @@ class Observations:
         return lines
 
     def write(self, file_name, path='.'):
-        with open(Path(path) / file_name) as file_out:
+        with open(Path(path) / file_name, 'w') as file_out:
             file_out.write(str(self))
 
 
@@ -1177,7 +1177,7 @@ class LocGrid(object):
             save_flag = 'NO_SAVE'
 
         repr = f'LOCGRID {self.dim_x} {self.dim_y} {self.dim_z} ' \
-               f'{self.origin_x / div} {self.oring_y / div} ' \
+               f'{self.origin_x / div} {self.origin_y / div} ' \
                f'{self.origin_z / div} ' \
                f'{self.spacing_x / div} {self.spacing_y / div} ' \
                f'{self.spacing_z / div} {self.grid_type} {save_flag}\n'
@@ -1429,6 +1429,7 @@ class ProjectManager(object):
 
         self.obs_path = self.root_directory / 'observations'
         self.obs_path.mkdir(parents=True, exist_ok=True)
+        self.observation_file_name = 'observation.obs'
 
         self.output_file_path = self.root_directory / 'output'
         self.output_file_path.mkdir(parents=True, exist_ok=True)
@@ -1450,6 +1451,7 @@ class ProjectManager(object):
         else:
             self.control_template = self.add_template_control()
 
+        self.control_file = self.current_run_directory / 'run.nll'
 
     def init_travel_time_grid(self):
         """
@@ -1601,16 +1603,18 @@ class ProjectManager(object):
             logger.warning('the inventory and the travel time grids might'
                            'be out of sync.')
 
-    def add_observations(self, observations,
-                         observation_file_name='observation.obs'):
+    def add_observations(self, observations):
         """
         adding observations to the project
         :param observations: Observations
         :param observation_file_name: name of the observation file
         (default: observation.obs
         """
+        if not isinstance(observations, Observations):
+            raise TypeError(f'observations is type {type(observations)}. '
+                            f'observations must be type {Observations}.')
         self.current_run_directory.mkdir(parents=True, exist_ok=True)
-        observations.write(observation_file_name,
+        observations.write(self.observation_file_name,
                            path=self.obs_path)
 
     def clean_run(self):
@@ -1640,12 +1644,12 @@ class ProjectManager(object):
             raise TypeError(f'control is type {type(control)}. '
                             f'control must be type {Control}.')
 
-        if not issubclass(transformation, GeographicTransformation):
+        if not issubclass(type(transformation), GeographicTransformation):
             raise TypeError(f'transformation is type {type(transformation)}. '
                             f'expecting type'
                            f'{GeographicTransformation}.')
 
-        if not locseach.type == 'LOCSEARCH':
+        if not locsearch.type == 'LOCSEARCH':
             raise TypeError(f'locsearch is type {type(locsearch)}'
                             f'expecting type '
                             f'{LocSearchGrid} '
@@ -1658,7 +1662,6 @@ class ProjectManager(object):
 
         if not isinstance(locgau, GaussianModelErrors):
             raise TypeError(f'locgau is type {type(locgau)}')
-
 
         dict_out = {'control': control,
                     'transformation': transformation,
@@ -1673,40 +1676,40 @@ class ProjectManager(object):
 
         self.control_template = dict_out
 
-        return dict_out
-
     def run(self):
         ctrl = ''
-        ctrl += str(self.control_template['control'])
+        ctrl += str(self.control_template['control']) + '\n'
+        ctrl += str(self.control_template['transformation']) + '\n\n'
 
+        if self.control_template['locsig'] is not None:
+            ctrl += self.control_template['locsig']
 
+        if self.control_template['loccom'] is not None:
+            ctrl += self.control_template['loccom'] + '\n'
 
-    @property
-    def build_nlloc_control():
-        # Building with default values
-        ctrl = ''
-        ctrl += str(Control())
-        ctrl += str(GeographicTransformation()) + '\n'
-        ctrl += 'LOCSIG pynlloc uquake development team\n\n'
         ctrl += str(self.srces) + '\n'
-        ctrl += self.nlloc_files + '\n'
-        ctrl += LocSearchOctTree.init_default()
-        ctrl += LocationMethod.init_default()
-        ctrl += GaussianModelErrors.init_default()
 
-        shape = self.p_velocity.shape
-        origin = self.p_velocity.origin / 1000
-        spacing = self.p_velocity.spacing / 1000
-        ctrl.
+        ctrl += str(self.nlloc_files) + '\n'
+
+        ctrl += str(self.control_template['locsearch']) + '\n'
+        ctrl += str(self.control_template['loccom'])
+        ctrl += str(self.control_template['locgau'])
+
+        if self.p_velocity is not None:
+            ctrl += str(LocGrid.init_from_grid(self.p_velocity))
+        else:
+            raise ValueError('Cannot initialize the LocGrid, the velocity '
+                             'grids are not defined')
+
+        with open(self.current_run_directory / 'run.ctrl', 'w') as ctrl_file:
+            ctrl_file.write(ctrl)
 
     @property
     def nlloc_files(self):
-        observation_files = Path(self.obs_path / '*')
-        travel_time_file_root = grid.TTGrid.base_name()
-        travel_time_files = Path(self.travel_time_grid_location) / \
-                            travel_time_file_root
-        return NllocInputFiles(observation_files, travel_time_files,
-                               self.self.output_file_path)
+        observation_files = Path(self.obs_path / '*.obs')
+        return NllocInputFiles(observation_files,
+                               self.travel_time_grid_location / '*time*',
+                               self.output_file_path)
 
 
 class NllocInputFiles:

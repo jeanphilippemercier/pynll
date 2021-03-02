@@ -3,13 +3,13 @@ from importlib import reload
 from loguru import logger
 
 try:
-    from .fixtures.data import (inventory, catalog, get_inventory)
+    from .fixtures.data import (inventory, catalog, get_inventory, get_catalog)
     from .fixtures.grids import (travel_time_grids, velocity_grids,
                                  get_travel_time_grids,
                                  get_velocity_grids)
 except Exception as e:
     logger.error(e)
-    from fixtures.data import (inventory, catalog, get_inventory)
+    from fixtures.data import (inventory, catalog, get_inventory, get_catalog)
     from fixtures.grids import (travel_time_grids, velocity_grids,
                                 get_travel_time_grids,
                                 get_velocity_grids)
@@ -93,25 +93,27 @@ def test_project_manager_add_inventory(inventory):
     project_manager.add_inventory(inventory)
 
 
-def test_project_manager(inventory, velocity_grids):
-    project_manager = nlloc.ProjectManager('.', 'TEST', 'TEST')
-    project_manager.add_inventory(inventory)
-    srces = nlloc.Srces.from_inventory(get_inventory())
-    project_manager.add_srces(srces, force=True)
-    project_manager.add_velocities(velocity_grids)
-    # project_manager.init_travel_time_grid()
-    project_manager.clean_run()
-    assert True
+# def test_project_manager(inventory, velocity_grids):
+#     project_manager = nlloc.ProjectManager('.', 'TEST', 'TEST')
+#     project_manager.add_inventory(inventory)
+#     srces = nlloc.Srces.from_inventory(get_inventory())
+#     project_manager.add_srces(srces, force=True)
+#     project_manager.add_velocities(velocity_grids)
+#     # project_manager.init_travel_time_grid()
+#     project_manager.clean_run()
+#     assert True
 
 
 def test_nlloc(inventory):
-    control = nlloc.Control()
-    logger.info(control)
-    trans = nlloc.GeographicTransformation()
-    logger.info(trans)
-    srces = nlloc.Srces.from_inventory(inventory)
-    logger.info(srces.locs)
-    logger.info(srces)
+    # control = nlloc.Control()
+    # logger.info(control)
+    # trans = nlloc.GeographicTransformation()
+    # logger.info(trans)
+    # srces = nlloc.Srces.from_inventory(inventory)
+    # logger.info(srces.locs)
+    # logger.info(srces)
+    project_manager = nlloc.ProjectManager('.', 'TEST', 'TEST')
+    project_manager.add_template_control()
     assert True
 
 
