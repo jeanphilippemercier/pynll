@@ -335,10 +335,13 @@ class ModelLayer:
         self.z_top = z_top
         self.value_top = value_top
 
+    def __repr__(self):
+        return f'top - {self.z_top:5d} | value - {self.value_top:5d}\n'
 
-class LayeredVelocityModel:
 
-    def __init__(self, model_id=None, velocity_model_layers=[],
+class LayeredVelocityModel(object):
+
+    def __init__(self, model_id=None, velocity_model_layers=None,
                  phase='P', grid_units='METER',
                  float_type=__default_float_type__):
         """
@@ -351,7 +354,8 @@ class LayeredVelocityModel:
         :type phase: str
         """
 
-        self.layers = velocity_model_layers
+        if velocity_model_layers is None:
+            self.velocity_model_layers = []
 
         if validate_phase(phase):
             self.phase = phase.upper()
@@ -369,6 +373,13 @@ class LayeredVelocityModel:
 
         self.model_id = model_id
 
+    def __repr__(self):
+        output = ''
+        for i, layer in enumerate(self.velocity_model_layers):
+            output += f'layer {i+1:4d} | {layer}'
+
+        return output
+
     def add_layer(self, layer):
         """
         Add a layer to the model. The layers must be added in sequence from the
@@ -378,13 +389,16 @@ class LayeredVelocityModel:
         if not (type(layer) is ModelLayer):
             raise TypeError('layer must be a VelocityModelLayer object')
 
-        self.layers.append(layer)
+        if self.velocity_model_layers is None:
+            self.velocity_model_layers = [layer]
+        else:
+            self.velocity_model_layers.append(layer)
 
     def gen_1d_model(self, z_min, z_max, spacing):
         # sort the layers to ensure the layers are properly ordered
         z = []
         v = []
-        for layer in self.layers:
+        for layer in self.velocity_model_layers:
             z.append(layer.z_top)
             v.append(layer.value_top)
 
@@ -433,14 +447,13 @@ class LayeredVelocityModel:
 
         z_interp, v_interp = self.gen_1d_model(z_min, z_max, spacing)
 
-        if self.grid_type == 'Vp':
+        x_label = None
+        if self.phase == 'P':
             x_label = 'P-wave velocity'
-        elif self.grid_type == 'Vs':
+        elif self.phase == 'S':
             x_label = 's-wave velocity'
-        elif self.grid_type == 'rho':
-            x_label = 'density'
 
-        if self.units == 'METER':
+        if self.grid_units == 'METER':
             units = 'm'
         else:
             units = 'km'
@@ -1111,7 +1124,7 @@ class TravelTimeEnsemble:
         return tt_dicts
 
     def ray_tracer(self, start, seed_labels=None, multithreading=True,
-                   cpu_utilisation=0.9, grid_coordinate=True, max_iter=1000):
+                   cpu_utilisation=0.9, grid_coordinate=False, max_iter=1000):
         """
 
         :param start: origin of the ray, usually the location of an event

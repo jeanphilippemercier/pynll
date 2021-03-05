@@ -1737,8 +1737,6 @@ def read_hypocenter_file(filename, units='METER'):
         return tme, hyp_x, hyp_y, hyp_z
 
 
-
-
 def read_nlloc_hypocenter_file(filename, picks=None,
                                evaluation_mode='automatic',
                                evaluation_status='preliminary'):

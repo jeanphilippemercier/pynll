@@ -5,14 +5,15 @@ import os
 from pathlib import Path
 
 from nlloc import grid
+from nlloc.grid import LayeredVelocityModel, ModelLayer
 from time import time
 from loguru import logger
 
 from pytest import fixture
 
 
-reload(nlloc)
-reload(grid)
+# reload(nlloc)
+# reload(grid)
 
 test_artifacts = os.environ['UQUAKE_TEST_ARTIFACTS']
 inventory_file = test_artifacts + '/inventory.xml'
@@ -28,21 +29,22 @@ z = [1168, 459, -300, -500]
 vp_z = [4533, 5337, 5836, 5836]
 vs_z = [2306, 2885, 3524, 3524]
 
-layered_model_p = grid.LayeredVelocityModel(phase='P')
-layered_model_s = grid.LayeredVelocityModel(phase='S')
+layered_model_p = LayeredVelocityModel(phase='P')
+
+layered_model_s = LayeredVelocityModel(phase='S')
 
 for (z_, vp, vs) in zip(z, vp_z, vs_z):
-    layer_p = grid.ModelLayer(z_, vp)
+    layer_p = ModelLayer(z_, vp)
     layered_model_p.add_layer(layer_p)
     layer_s = grid.ModelLayer(z_, vs)
     layered_model_s.add_layer(layer_s)
 
 base_directory = Path(test_artifacts) / 'vel2grid'
 
-# vel_3d_p = layered_model_p.gen_3d_grid(network_code, dimensions, origin,
-#                                        spacing)
-# vel_3d_s = layered_model_s.gen_3d_grid(network_code, dimensions, origin,
-#                                        spacing)
+vel_3d_p = layered_model_p.gen_3d_grid(network_code, dimensions, origin,
+                                       spacing)
+vel_3d_s = layered_model_s.gen_3d_grid(network_code, dimensions, origin,
+                                       spacing)
 #
 # vel_3d_p.write(project_code)
 #
