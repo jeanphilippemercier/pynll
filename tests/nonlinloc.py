@@ -40,7 +40,7 @@ control = nlloc.Control()
 geographic_transformation = nlloc.GeographicTransformation()
 sensors = nlloc.Srces.from_inventory(get_inventory())
 files = nlloc.NllocInputFiles(observation_files, travel_time_root,
-                         output_file_root)
+                              output_file_root)
 
 # tt_grids = get_travel_time_grids()
 
@@ -102,6 +102,18 @@ def test_project_manager_add_inventory(inventory):
 #     # project_manager.init_travel_time_grid()
 #     project_manager.clean_run()
 #     assert True
+
+def ray_tracing():
+    pass
+    # ray = tt_out_grid.ray_tracer([  6.51229155e+05,   4.76720076e+06,  -4.27930000e+01])
+    # ray
+    # plt.imshow(tt_out_grid.data[:, :, 17].T, extent=extent, origin='lower')
+    # nodes = []
+    # for nod in ray.nodes:
+    #     nodes.append(nod[:-1])
+    # nodes = np.array(nodes)
+    # plt.plot(nodes[:,0], nodes[:,1], 'r')
+
 
 
 def test_nlloc(inventory):

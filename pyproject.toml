@@ -15,7 +15,8 @@ dvc = "^1.11.15"
 matplotlib = "^3.3.4"
 scikit-fmm = "^2021.2.2"
 jedi = "^0.17.2"
-uquake = "^0.2.13"
+phonenumbers = "8.12.18"
+uquake = "^0.2.21"
 
 [tool.poetry.scripts]
 

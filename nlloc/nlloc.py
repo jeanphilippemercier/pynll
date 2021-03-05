@@ -63,9 +63,11 @@ __valid_reference_ellipsoid__ = ['WGS-84', 'GRS-80', 'WGS-72', 'Australian',
                                  'Clarke-1880', 'Clarke-1866', 'Airy Bessel',
                                  'Hayford-1830', 'Sphere']
 
+__valid_units__ =['METER', 'KILOMETER']
+
 
 class Grid2Time:
-    def __init__(self, inventory, grid_transform, base_directory, base_name,
+    def __init__(self, srces, grid_transform, base_directory, base_name,
                  verbosity=1, random_seed=1000, p_wave=True, s_wave=True,
                  calculate_angles=True, model_directory='models',
                  grid_directory='grids'):
@@ -75,8 +77,8 @@ class Grid2Time:
         Note that at this time the class does not support any geographic
         transformation
 
-        :param inventory: inventory file
-        :type inventory: uquake.core.inventory.Inventory
+        :param srces: inventory data
+        :type srces: Srces
         :param base_directory: the base directory of the project
         :type base_directory: str
         :param base_name: the network code
@@ -177,200 +179,6 @@ class Grid2Time:
             ctrl.write(f'GT_PLFD 1.0e-4 {self.verbosity + 1}\n')
 
 
-class NonLinLoc:
-
-    __required_sections__ = ['CONTROL', 'TRANS', 'LOCSRCE', 'LOCFILES',
-                             'LOCSEARCH', 'LOCMETH', 'LOCGAU', 'LOCGRID',]
-
-    __optional_sections__ = ['LOCSIG', 'LOCCOM', 'LOCHYPOUT', 'LOCGAU2',
-                             'LOCPHASEID', 'LOCQUAL2ERR', 'LOCPHSTAT',
-                             'LOCANGLES', 'LOCMAG', 'LOCCMP', 'LOCALIAS',
-                             'LOCEXCLUDE', 'OCDELAY', 'LOCELEVCORR',
-                             'LOCTOPO_SURFACE', 'LOCSTATWT']
-
-    __repeatable__ = ['LOCGRID', 'LOCCMP', 'LOCALIAS', 'LOCEXCLUDE',
-                      'LOCDELAY', 'LOCELEVCORR']
-
-    def __init__(self, control, trans, locsrces, locfiles, locsearch, locmeth,
-                 locgau, locgrids,
-                 locsig='', loccom='', location_output_file_type=None,
-                 travel_time_model_error=None,
-                 phase_identifier_mapping=None,
-                 quality_to_error_mapping=None,
-                 phase_statistics_parameters=None,
-                 takeoff_angle_parameters=None,
-                 magnitude_calculation_method=None,
-                 magnitude_calculation_component=None,
-                 sensor_alias_code=None, exclude_observations=None,
-                 phase_time_delay=None,
-                 vertical_ray_elevation_correction=None,
-                 topography_mask=None, sensor_distribution_weighting=None):
-
-        """
-        create an object to run NonLinLoc
-        :param control: CONTROL - Sets various general program control
-        parameters.
-        :type control: Control
-        :param trans: gegraphic transformation - Sets geographic to working
-        coordinates transformation parameters. The GLOBAL option sets
-        spherical regional/teleseismic mode, with no geographic transformation
-        - most position values are input and used directly as latitude and
-        longitude in degrees. The SIMPLE, SDC and LAMBERT options make
-        transformations of geographic coordinates into a Cartesian/rectangular
-        system. The NONE transformation performs no geographic conversion.
-        :type trans: GeographicTransformation
-        :param gtsrces: Source Description - Specifies a source
-        location. One time grid and one angles grid (if requested) will
-        be generated for each source. Four formats are supported:
-        XYZ (rectangular grid coordinates),
-        LATLON (decimal degrees for latitude/longitude),
-        LATLONDM (degrees + decimal minutes for latitude/longitude) and
-        LATLONDS (degrees + minutes + decimal seconds for latitude/longitude).
-        :param locfiles: Location input files - Input and Output File Root Name
-        Specifies the directory path and filename for the phase/observation
-        files, and the file root names (no extension) for the input time grids
-        and the output files.
-        :param locsearch: Search method: Specifies the search type
-        and search parameters. The possible search types are
-        GRID (grid search), MET (Metropolis), and OCT (Octtree).
-        :param locmeth: Location Method: Specifies the
-        location method (algorithm) and method parameters.
-        :param locgau: Gaussian Model Errors:
-        Specifies parameters for Gaussian modelisation-error covariances
-        Covariance ij between stations i and j using the relation
-        ( Tarantola and Valette, 1982 ):
-        Covariance ij = SigmaTime 2 exp(-0.5(Dist 2 ij )/ CorrLen 2 )
-        where Dist is the distance in km between stations i and j .
-        :param locgrid: Search Grid Description: Specifies the
-        size and other parameters of an initial or nested 3D search grid.
-        The order of locgrid statements is critical (see Notes).
-
-        -- optional parameters
-
-        :param locsig: Signature text
-        :param loccom: Comment text
-        :param location_output_file_type: LOCHYPOUT - Output File Types:
-        Specifies the filetypes to be used for output.
-        :param travel_time_model_error: LOCGAU2 - Travel-Time Dependent Model
-        Errors: Specifies parameters for travel-time dependent
-        modelisation-error. Sets the travel-time error in proportion to the
-        travel-time, thus giving effectively a station-distance weighting,
-        which was not included in the standard Tarantola and Valette
-        formulation used by LOCGAU. This is important with velocity model
-        errors, because nearby stations would usually have less absolute error
-        than very far stations, and in general it is probably more correct
-        that travel-time error is a percentage of the travel-time. Preliminary
-        results using LOCGAU2 indicate that this way of setting travel-time
-        errors gives visible improvement in hypocenter clustering.
-        (can currently only be used with the EDT location methods)
-        :param phase_identifier_mapping: LOCPHASEID - Phase Identifier Mapping:
-        Specifies the mapping of phase codes in the phase/observation file
-        ( i.e. pg or Sn ) to standardized phase codes ( i.e. P or S ).
-        :param quality_to_error_mapping: LOCQUAL2ERR - Quality to Error Mapping
-        required, non-repeatable, for phase/observation file formats that do
-        not include time uncertainties ; ignored, non-repeatable, otherwise:
-        Specifies the mapping of phase pick qualities phase/observation file
-        (i.e. 0,1,2,3 or 4) to time uncertainties in seconds
-        (i.e. 0.01 or 0.5).
-        :param phase_statistics_parameters: LOCPHSTAT - Phase Statistics
-        parameters: Specifies selection criteria for phase residuals to be
-        included in calculation of average P and S station residuals.
-        The average residuals are saved to a summary, phase statistics file
-        (see Phase Statistics file formats ).
-        :param takeoff_angle_parameters: LOCANGLES - Take-off Angles parameters
-        Specifies whether to determine take-off angles for the maximum
-        likelihood hypocenter and sets minimum quality cutoff for saving angles
-        and corresponding phases to the HypoInverse Archive file.
-        :param magnitude_calculation_method: LOCMAG - Magnitude Calculation
-        Method: Specifies the magnitude calculation type and parameters.
-        The possible magnitude types are:
-        - ML_HB (Local (Richter) magnitudeMLfromHutton and Boore (1987)),
-          ML = log(A f) +nlog(r/100) +K(r-100) + 3.0 +S,
-        - MD_FMAG (Duration magnitudeMLfromLahr, J.C., (1989) HYPOELLIPSE),
-          MD = C1 + C2log(Fc) + C3r + C4z + C5[log(Fc))2,
-        :param magnitude_calculation_component: LOCCMP - Magnitude Calculation
-        Component
-        :param sensor_alias_code: LOCALIAS - Station Code Alias
-        Specifies (1) an alias (mapping) of station codes, and (2) start and
-        end dates of validity of the alias. Allows (1) station codes that vary
-        over time or in different pick files to be homogenized to match codes
-        in time grid files, and (2) allows selection of station data by time.
-        :param exclude_observations: LOCEXCLUDE - Exclude Observations
-        :param phase_time_delay: LOCDELAY - Phase Time Delays
-        Specifies P and S delays (station corrections) to be subtracted from
-        observed P and S times.
-        :param vertical_ray_elevation_correction: LOCELEVCORR -
-        Simple, vertical ray elevation correction:
-        Calculates a simple elevation correction using the travel-time of a
-        vertical ray from elev 0 to the elevation of the station. This control
-        statement is mean to be used in GLOBAL mode with TauP or other time
-        grids which use elevation 0 for the station elevation.
-        :param topography_mask: LOCTOPO_SURFACE - Topographic mask for location
-        search region:
-        Uses a topographic surface file in GMT ascii GRD format to mask prior
-        search volume to the half-space below the topography.
-        :param sensor_distribution_weighting: LOCSTAWT - Station distribution
-        weighting
-        Calculates a weight for each station that is a function of the average
-        distance between all stations used for location. This helps to correct
-        for irregular station distribution, i.e. a high density of stations in
-        regions such as Europe and North America and few or no stations in
-        regions such as oceans. The relative weight for station i is:
-        wieghti = 1.0 / [ SUMj exp(-dist2/cutoffDist2 ] where j is a station
-        used for location and dist is the epicentral/great-circle distance
-        between stations i and j.
-        """
-
-        if isinstance(control, Control):
-            raise TypeError(f'control must be a type {type(Control)}')
-        self.control = control
-
-        if ((not isinstance(trans,
-                            GeographicTransformation)) |
-            (not issubclass(type(trans),
-                            GeographicTransformation))):
-            raise TypeError(f'trans must be a class or '
-                            f'subclass type or subclass of '
-                            f'{type(GeographicTransformation)}')
-        self.trans = trans
-
-        if not isinstance(locsrces, SRCE):
-            raise TypeError(f'locsrces must be a class of type '
-                            f'{type(SRCE)} object')
-
-        self.locsrces = locsrces
-
-        if not isinstance(locfiles, LocFiles):
-            raise TypeError(f'locfiles must be a class of type '
-                            f'{type(LocFiles)}')
-
-
-
-        self.sensors = sensors
-        self.location_input_files = location_input_files
-        self.location_output_files_type = location_output_file_type
-        self.search_type = search_type
-        self.location_method = location_method
-        self.gaussian_error_model = gaussian_model_error
-        self.quality_to_error_mapping = quality_to_error_mapping
-        self.search_grid = search_grid
-        self.signature = signature
-        self.comment = comment
-        self.travel_time_model_error = travel_time_model_error
-        self.phase_identifier_mapping = phase_identifier_mapping
-        self.phase_statistics_parameters = phase_statistics_parameters
-        self.takeoff_angle_parameters = takeoff_angle_parameters
-        self.magnitude_calculation_method = magnitude_calculation_method
-        self.magnitude_calculation_component = magnitude_calculation_component
-        self.sensor_alias_code = sensor_alias_code
-        self.exclude_observations = exclude_observations
-        self.phase_time_delay = phase_time_delay
-        self.vertical_ray_elevation_correction = \
-            vertical_ray_elevation_correction
-        self.topography_mask = topography_mask
-        self.sensor_distribution_weighting = sensor_distribution_weighting
-
-
 class Control:
     def __init__(self, message_flag=-1, random_seed=1000):
         """
@@ -406,7 +214,7 @@ class GeographicTransformation:
         self.transformation = transformation
 
     def __repr__(self):
-        line = f'TRANSFORMATION {self.transformation}'
+        line = f'TRANS {self.transformation}'
         return line
 
 
@@ -824,7 +632,7 @@ class LocationMethod:
     @classmethod
     def init_default(cls):
         method = 'EDT_OT_WT'
-        max_dist_sta_grid = 9999
+        max_dist_sta_grid = 9999.
         min_number_phases = 6
         max_number_phases = -1
         min_number_s_phases = -1
@@ -837,9 +645,10 @@ class LocationMethod:
                    max_number_3d_grid_memory, min_dist_sta_grid)
 
     def __repr__(self):
-        line = f'LOCMETH {self.method} {self.max_dist_sta_grid} ' \
+        line = f'LOCMETH {self.method} {self.max_dist_sta_grid:.1f} ' \
                f'{self.min_number_phases} {self.max_number_phases} ' \
-               f'{self.min_number_s_phases} {self.vp_vs_ratio}\n'
+               f'{self.min_number_s_phases} {self.vp_vs_ratio} ' \
+               f'{self.max_number_3d_grid_memory}\n'
 
         return line
 
@@ -882,8 +691,8 @@ class Observations:
 
         picks = [arrival.get_pick() for arrival in origin.arrivals]
 
-        return cls.__init__(picks, p_pick_error=p_pick_error,
-                            s_pick_error=s_pick_error)
+        return cls(picks, p_pick_error=p_pick_error,
+                   s_pick_error=s_pick_error)
 
     def __repr__(self):
 
@@ -1099,6 +908,7 @@ class Srces:
 
 __valid_search_grid_type__ = ['MISFIT', 'PROB_DENSITY']
 
+
 class LocGrid(object):
     def __init__(self, dim_x, dim_y, dim_z, origin_x, origin_y, origin_z,
                  spacing_x, spacing_y, spacing_z, grid_type='PROB_DENSITY',
@@ -1146,7 +956,7 @@ class LocGrid(object):
         self.units = units
 
     @classmethod
-    def init_from_grid(cls, input_grid, grid_type='PROB_DENSITY', save=False):
+    def init_from_grid(cls, input_grid, grid_type='PROB_DENSITY', save=True):
         """
 
         :param input_grid:
@@ -1154,7 +964,7 @@ class LocGrid(object):
         :param grid_type: (choice: MISFIT PROB_DENSITY) statistical quantity to
         calculate on grid
         :param save: specifies if the results of the search over this grid
-        should be saved to disk (Default: False)
+        should be saved to disk (Default: True)
         :return:
         """
         dims = input_grid.dims
@@ -1168,7 +978,7 @@ class LocGrid(object):
 
     def __repr__(self):
         div = 1
-        if self.units == 'METERS':
+        if self.units == 'METER':
             div = 1000
 
         if self.save:
@@ -1177,12 +987,23 @@ class LocGrid(object):
             save_flag = 'NO_SAVE'
 
         repr = f'LOCGRID {self.dim_x} {self.dim_y} {self.dim_z} ' \
-               f'{self.origin_x / div} {self.origin_y / div} ' \
-               f'{self.origin_z / div} ' \
-               f'{self.spacing_x / div} {self.spacing_y / div} ' \
-               f'{self.spacing_z / div} {self.grid_type} {save_flag}\n'
+               f'{self.origin_x / div:0.6f} {self.origin_y / div:0.6f} ' \
+               f'{self.origin_z / div:0.6f} ' \
+               f'{self.spacing_x / div:0.6f} {self.spacing_y / div:0.6f} ' \
+               f'{self.spacing_z / div:0.6f} {self.grid_type} {save_flag}\n'
 
         return repr
+
+
+class LocQual2Err(object):
+    def __init__(self, *args):
+        self.args = args
+
+    def __repr__(self):
+        line = 'LOCQUAL2ERR'
+        for arg in self.args:
+            line += f' {arg}'
+        return line + '\n'
 
 
 __observation_file_types__ = ['NLLOC_OBS', 'HYPO71', 'HYPOELLIPSE',
@@ -1191,6 +1012,96 @@ __observation_file_types__ = ['NLLOC_OBS', 'HYPO71', 'HYPOELLIPSE',
                               'NCEDC_UCB', 'ETH_LOC', 'RENASS_WWW',
                               'RENASS_DEP', 'INGV_BOLL', 'INGV_BOLL_LOCAL',
                               'INGV_ARCH']
+
+
+class NllocInputFiles:
+    def __init__(self, observation_files, travel_time_file_root,
+                 output_file_root, observation_file_type='NLLOC_OBS',
+                 i_swap_bytes=False, create_missing_folders=True):
+        """
+        Specifies the directory path and filename for the phase/observation
+        files, and the file root names (no extension) for the input time grids
+        and the output files.
+
+        the path where the files are to be located is
+
+        :param observation_files: full or relative path and name for
+        phase/observations files, mulitple files may be specified with
+        standard UNIX "wild-card" characters ( * and ? )
+        :type observation_files: str
+        :param observation_file_type: (choice: NLLOC_OBS HYPO71 HYPOELLIPSE
+        NEIC CSEM_ALERT SIMULPS HYPOCENTER HYPODD SEISAN NORDIC NCSN_Y2K_5
+        NCEDC_UCB ETH_LOC RENASS_WWW RENASS_DEP INGV_BOLL
+        INGV_BOLL_LOCAL INGV_ARCH) format type for phase/observations files
+        (see Phase File Formats) - DEFAULT NLLOC_OBS
+        :type observation_file_type: str
+        :param travel_time_file_root: full or relative path and file root name
+        (no extension) for input time grids.
+        :type travel_time_file_root: str
+        :param output_file_root: full or relative path and file root name
+        (no extension) for output files
+        :type output_file_root: str
+        :param i_swap_bytes: flag to indicate if hi and low bytes of input
+        time grid files should be swapped. Allows reading of travel-time grids
+        from different computer architecture platforms during TRANS GLOBAL mode
+        location. DEFAULT=False
+        :type i_swap_bytes: bool
+        :param create_missing_folders: if True missing folder will be created
+        """
+
+        # validate if the path exist if the path does not exist the path
+        # should be created
+        observation_files = Path(observation_files)
+        if not observation_files.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{observation_files.parent}> does '
+                               f'not exist. missing folders will be created')
+                observation_files.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{observation_files.parent}> does not '
+                              f'exist')
+
+        self.observation_files = observation_files
+
+        travel_time_file_root = Path(travel_time_file_root)
+        if not travel_time_file_root.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{travel_time_file_root.parent}> '
+                               f'does not exist. missing folders will '
+                               f'be created')
+
+                travel_time_file_root.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{travel_time_file_root.parent}> does '
+                              f'not exist')
+
+        self.travel_time_file_root = travel_time_file_root
+
+        output_file_root = Path(output_file_root)
+
+        if not output_file_root.parent.exists():
+            if create_missing_folders:
+                logger.warning(f'the path <{output_file_root.parent}> '
+                               f'does not exist. missing folders will '
+                               f'be created')
+
+                output_file_root.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                raise IOError(f'path <{output_file_root.parent}> does '
+                              f'not exist')
+
+        self.output_file_root = output_file_root
+
+        validate(observation_file_type, __observation_file_types__)
+        self.observation_file_type = observation_file_type
+
+        self.i_swap_bytes = i_swap_bytes
+
+    def __repr__(self):
+        line = f'LOCFILES {self.observation_files} ' \
+               f'{self.observation_file_type} {self.travel_time_file_root} ' \
+               f'{self.output_file_root} {int(self.i_swap_bytes)}\n'
+        return line
 
 
 class ProjectManager(object):
@@ -1427,16 +1338,19 @@ class ProjectManager(object):
             self.travel_times = grid.TravelTimeEnsemble.from_files(
                 self.travel_time_grid_location)
 
-        self.obs_path = self.root_directory / 'observations'
-        self.obs_path.mkdir(parents=True, exist_ok=True)
-        self.observation_file_name = 'observation.obs'
-
-        self.output_file_path = self.root_directory / 'output'
-        self.output_file_path.mkdir(parents=True, exist_ok=True)
-
         self.run_id = str(uuid4())
         self.current_run_directory = self.root_directory / 'run' / self.run_id
         self.current_run_directory.mkdir(parents=True, exist_ok=False)
+
+        self.output_file_path = self.current_run_directory / 'outputs'
+        self.output_file_path.mkdir(parents=True, exist_ok=True)
+
+        self.observation_path = self.current_run_directory / 'observations'
+        self.observation_path.mkdir(parents=True, exist_ok=True)
+        self.observation_file_name = 'observations.obs'
+        self.observation_file = self.observation_path / \
+                                self.observation_file_name
+        self.observations = None
 
         self.template_directory = self.root_directory / 'templates'
 
@@ -1449,14 +1363,20 @@ class ProjectManager(object):
             with open(self.template_ctrl_file, 'rb') as template_ctrl:
                 self.control_template = pickle.load(template_ctrl)
         else:
-            self.control_template = self.add_template_control()
+            self.control_template = None
+            self.add_template_control()
 
         self.control_file = self.current_run_directory / 'run.nll'
+
+        self.last_event_hypocenter = None
+        self.last_event_time = None
 
     def init_travel_time_grid(self):
         """
         initialize the travel time grids
         """
+        logger.info('initializing the travel time grids')
+        t0 = time()
         seeds = self.srces.locs
         seed_labels = self.srces.labels
 
@@ -1492,6 +1412,9 @@ class ProjectManager(object):
             fle.unlink(missing_ok=True)
 
         self.travel_times.write(self.travel_time_grid_location)
+        t1 = time()
+        logger.info(f'done initializing the travel time grids in '
+                    f'{t1 - t0:0.2f} seconds')
 
     def add_inventory(self, inventory, create_srces_file=True):
         """
@@ -1603,20 +1526,6 @@ class ProjectManager(object):
             logger.warning('the inventory and the travel time grids might'
                            'be out of sync.')
 
-    def add_observations(self, observations):
-        """
-        adding observations to the project
-        :param observations: Observations
-        :param observation_file_name: name of the observation file
-        (default: observation.obs
-        """
-        if not isinstance(observations, Observations):
-            raise TypeError(f'observations is type {type(observations)}. '
-                            f'observations must be type {Observations}.')
-        self.current_run_directory.mkdir(parents=True, exist_ok=True)
-        observations.write(self.observation_file_name,
-                           path=self.obs_path)
-
     def clean_run(self):
         """
         remove the files and directory related to a particular run id and
@@ -1632,12 +1541,14 @@ class ProjectManager(object):
     def clean_project(self):
         pass
 
-    def add_template_control(self, control=Control(),
+    def add_template_control(self, control=Control(message_flag=1),
                              transformation=GeographicTransformation(),
                              locsig=None, loccom=None,
                              locsearch=LocSearchOctTree.init_default(),
                              locmeth=LocationMethod.init_default(),
                              locgau=GaussianModelErrors.init_default(),
+                             locqual2err=LocQual2Err(0.0001, 0.0001, 0.0001,
+                                                     0.0001, 0.0001),
                              **kwargs):
 
         if not isinstance(control, Control):
@@ -1661,7 +1572,12 @@ class ProjectManager(object):
                             f'expecting type {LocationMethod}')
 
         if not isinstance(locgau, GaussianModelErrors):
-            raise TypeError(f'locgau is type {type(locgau)}')
+            raise TypeError(f'locgau is type {type(locgau)}, '
+                            f'expecting type {GaussianModelErrors}')
+
+        if not isinstance(locqual2err, LocQual2Err):
+            raise TypeError(f'locqual2err is type {type(locqual2err)}, '
+                            f'expecting type {LocQual2Err}')
 
         dict_out = {'control': control,
                     'transformation': transformation,
@@ -1669,14 +1585,97 @@ class ProjectManager(object):
                     'loccom': loccom,
                     'locsearch': locsearch,
                     'locmeth': locmeth,
-                    'locgau': locgau}
+                    'locgau': locgau,
+                    'locqual2err': locqual2err}
 
         with open(self.template_ctrl_file, 'wb') as template_ctrl:
             pickle.dump(dict_out, template_ctrl)
 
         self.control_template = dict_out
 
-    def run(self):
+    def write_control_file(self):
+        with open(self.control_file, 'w') as control_file:
+            control_file.write(self.control)
+
+    def add_observations(self, observations):
+        """
+        adding observations to the project
+        :param observations: Observations
+        """
+        if not isinstance(observations, Observations):
+            raise TypeError(f'observations is type {type(observations)}. '
+                            f'observations must be type {Observations}.')
+        self.observation_path.mkdir(parents=True, exist_ok=True)
+        observations.write(self.observation_file_name,
+                           path=self.observation_path)
+
+        self.observations = observations
+
+    def run_location(self, observations=None):
+        import subprocess
+
+        if (observations is None) and (self.observations is None):
+            raise ValueError('The current run does not contain travel time'
+                             'observations. Observations should be added to '
+                             'the current run using the add_observations '
+                             'method.')
+
+        elif observations is not None:
+            self.add_observations(observations)
+
+        self.write_control_file()
+
+        cmd = ['NLLoc', self.control_file]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+
+        logger.info('locating event using NonLinLoc')
+        t0 = time()
+        output, error = process.communicate()
+        t1 = time()
+        logger.info(f'done locating event in {t1 - t0:0.2f} seconds')
+
+        t, x, y, z = read_hypocenter_file(self.output_file_path / 'last.hyp')
+
+        self.last_event_time = t
+        self.last_event_hypocenter = np.array([x, y, z])
+
+        return {'time': self.last_event_time,
+                'location': self.last_event_hypocenter}
+
+    @property
+    def rays(self):
+        if self.last_event_hypocenter is None:
+            raise ValueError('location must be run prior to calculating the '
+                             'rays. To locate an event, use the run_location '
+                             'method.')
+        return self.travel_times.ray_tracer(self.last_event_hypocenter)
+
+
+    @property
+    def nlloc_files(self):
+        observation_files = Path(self.observation_file)
+        return NllocInputFiles(self.observation_file,
+                               self.travel_time_grid_location /
+                               self.network_code,
+                               self.output_file_path / self.network_code)
+
+    @property
+    def control(self):
+
+        if self.srces is None:
+            raise ValueError('The project does not contain sensors or '
+                             'inventory. Sensors (srces) or inventory '
+                             'information can be added using the add_srces or'
+                             'add_inventory methods.')
+
+        if self.observations is None:
+            raise ValueError('The current run does not contain travel time'
+                             'observations. Observations should be added to '
+                             'the current run using the add_observations '
+                             'method.')
+
+        observations = str(self.observations)
+
         ctrl = ''
         ctrl += str(self.control_template['control']) + '\n'
         ctrl += str(self.control_template['transformation']) + '\n\n'
@@ -1691,9 +1690,11 @@ class ProjectManager(object):
 
         ctrl += str(self.nlloc_files) + '\n'
 
-        ctrl += str(self.control_template['locsearch']) + '\n'
-        ctrl += str(self.control_template['loccom'])
-        ctrl += str(self.control_template['locgau'])
+        ctrl += str(self.control_template['locsearch'])
+        ctrl += str(self.control_template['locmeth'])
+        ctrl += str(self.control_template['locgau']) + '\n'
+
+        ctrl += str(self.control_template['locqual2err'])
 
         if self.p_velocity is not None:
             ctrl += str(LocGrid.init_from_grid(self.p_velocity))
@@ -1701,179 +1702,41 @@ class ProjectManager(object):
             raise ValueError('Cannot initialize the LocGrid, the velocity '
                              'grids are not defined')
 
-        with open(self.current_run_directory / 'run.ctrl', 'w') as ctrl_file:
-            ctrl_file.write(ctrl)
-
-    @property
-    def nlloc_files(self):
-        observation_files = Path(self.obs_path / '*.obs')
-        return NllocInputFiles(observation_files,
-                               self.travel_time_grid_location / '*time*',
-                               self.output_file_path)
+        return ctrl
 
 
-class NllocInputFiles:
-    def __init__(self, observation_files, travel_time_file_root,
-                 output_file_root, observation_file_type='NLLOC_OBS',
-                 i_swap_bytes=False, create_missing_folders=True):
-        """
-        Specifies the directory path and filename for the phase/observation
-        files, and the file root names (no extension) for the input time grids
-        and the output files.
+def read_hypocenter_file(filename, units='METER'):
 
-        the path where the files are to be located is
+    validate(units, __valid_units__)
+    with open(filename, 'r') as hyp_file:
+        all_lines = hyp_file.readlines()
+        hyp = [line.split() for line in all_lines if 'HYPOCENTER' in line][0]
+        # stat = [line.split() for line in all_lines if 'STATISTICS' in line][0]
+        geo = [line.split() for line in all_lines if 'GEOGRAPHIC' in line][0]
+        # qual = [line.split() for line in all_lines if 'QUALITY' in line][0]
+        # search = [line.split() for line in all_lines if 'SEARCH' in line][0]
+        # sign = [line.split() for line in all_lines if 'SIGNATURE' in line][0]
 
-        :param observation_files: full or relative path and name for
-        phase/observations files, mulitple files may be specified with
-        standard UNIX "wild-card" characters ( * and ? )
-        :type observation_files: str
-        :param observation_file_type: (choice: NLLOC_OBS HYPO71 HYPOELLIPSE
-        NEIC CSEM_ALERT SIMULPS HYPOCENTER HYPODD SEISAN NORDIC NCSN_Y2K_5
-        NCEDC_UCB ETH_LOC RENASS_WWW RENASS_DEP INGV_BOLL
-        INGV_BOLL_LOCAL INGV_ARCH) format type for phase/observations files
-        (see Phase File Formats) - DEFAULT NLLOC_OBS
-        :type observation_file_type: str
-        :param travel_time_file_root: full or relative path and file root name
-        (no extension) for input time grids.
-        :type travel_time_file_root: str
-        :param output_file_root: full or relative path and file root name
-        (no extension) for output files
-        :type output_file_root: str
-        :param i_swap_bytes: flag to indicate if hi and low bytes of input
-        time grid files should be swapped. Allows reading of travel-time grids
-        from different computer architecture platforms during TRANS GLOBAL mode
-        location. DEFAULT=False
-        :type i_swap_bytes: bool
-        :param create_missing_folders: if True missing folder will be created
-        """
+        s = int(np.floor(float(geo[7])))
+        us = int((float(geo[7]) - s) * 1e6)
 
-        # validate if the path exist if the path does not exist the path
-        # should be created
-        observation_files = Path(observation_files)
-        if not observation_files.parent.exists():
-            if create_missing_folders:
-                logger.warning(f'the path <{observation_files.parent}> does '
-                               f'not exist. missing folders will be created')
-                observation_files.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                raise IOError(f'path <{observation_files.parent}> does not '
-                              f'exist')
+        if s < 0:
+            s = 0
 
-        self.observation_files = observation_files
+        if us < 0:
+            us = 0
 
-        travel_time_file_root = Path(travel_time_file_root)
-        if not travel_time_file_root.parent.exists():
-            if create_missing_folders:
-                logger.warning(f'the path <{travel_time_file_root.parent}> '
-                               f'does not exist. missing folders will '
-                               f'be created')
+        tme = datetime(int(geo[2]), int(geo[3]), int(geo[4]),
+                       int(geo[5]), int(geo[6]), s, us)
+        tme = UTCDateTime(tme)
 
-                travel_time_file_root.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                raise IOError(f'path <{travel_time_file_root.parent}> does '
-                              f'not exist')
+        hyp_x = float(hyp[2]) * 1000
+        hyp_y = float(hyp[4]) * 1000
+        hyp_z = float(hyp[6]) * 1000
 
-        self.travel_time_file_root = travel_time_file_root
-
-        output_file_root = Path(output_file_root)
-
-        if not output_file_root.parent.exists():
-            if create_missing_folders:
-                logger.warning(f'the path <{output_file_root.parent}> '
-                               f'does not exist. missing folders will '
-                               f'be created')
-
-                output_file_root.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                raise IOError(f'path <{output_file_root.parent}> does '
-                              f'not exist')
-
-        self.output_file_root = output_file_root
-
-        validate(observation_file_type, __observation_file_types__)
-        self.observation_file_type = observation_file_type
-
-        self.i_swap_bytes = i_swap_bytes
-
-    def __repr__(self):
-        line = f'LOCFILES {self.observation_files} ' \
-               f'{self.observation_file_type} {self.travel_time_file_root} ' \
-               f'{self.output_file_root} {int(self.i_swap_bytes)}\n'
-        return line
+        return tme, hyp_x, hyp_y, hyp_z
 
 
-class NLLocCtrlFile:
-    def __init__(self):
-        self.generic_control_statements = {
-            'control': '',
-            'geographic_transformation': '',
-        }
-
-        # not yet implemented
-        self.vel2grid = {
-            'velocity_output_root': '',
-            'wave_type': '',
-            'grid_description': '',
-            'model_layers': [],
-            'model_vertices': []}
-
-        # vel2grid
-        self.vel2grid_velocity_output = ''
-        self.vel2grid_wave_type = ''
-        self.grid_description = ''
-        self.velocity_layer = ''
-        self.trans_2d_3d = ''
-        self.velocity_model_vertex = ''
-        self.velocity_model_edge = ''
-        self.velocity_model_2d_polygon = ''
-
-        # grid2time
-        self.input_output_file_root
-        self.program_mode
-
-
-
-    # def add_control_section(self, message_flag, random_seed):
-    #     """
-    #     Sets various general program control parameters.
-    #
-    #     :param message_flag: (integer, min:-1, default:1) sets the verbosity
-    #     level for messages printed to the terminal
-    #     ( -1 = completely silent, 0 = error messages only, 1 = 0 +
-    #     higher-level warning and progress messages, 2 and higher = 1 +
-    #     lower-level warning and progress messages + information messages, ...)
-    #
-    #     :param random_seed: (integer) integer seed value for generating random
-    #     number sequences (used by program NLLoc to generate Metropolis samples
-    #     and by program Time2EQ to generate noisy time picks)
-    #     """
-    #
-    #     self.control_section =
-    #
-    #     if type(message_flag)
-
-
-
-__ctrl_file_control__ = 'CONTROL {message_flag} {seed}'
-
-__ctrl_file_geographic_transformation__ = 'TRANS {transform}'
-
-# __ctrl_file_
-
-__ctrl_file_velocity_section__ = """
-
-VGOUT {velocity_output_dir}
-
-"""
-
-
-
-
-control_section = {'verbosity_level': 0}
-
-class CtrlFile:
-    def __init__(self, verbosity_level=0, seed=1000, phases=[], ):
-        pass
 
 
 def read_nlloc_hypocenter_file(filename, picks=None,
