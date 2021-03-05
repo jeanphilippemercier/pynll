@@ -1636,19 +1636,19 @@ class ProjectManager(object):
 
         t, x, y, z = read_hypocenter_file(self.output_file_path / 'last.hyp')
 
-        self.last_event_time = t
-        self.last_event_hypocenter = np.array([x, y, z])
+        scatters = read_scatter_file(self.output_file_path / 'last.scat')
 
-        return {'time': self.last_event_time,
-                'location': self.last_event_hypocenter}
+        return {'event_id': str(t),
+                'time': t,
+                'hypocenter_location': np.array([x, y, z]),
+                'scatters': scatters}
 
-    @property
-    def rays(self):
+    def rays(self, hypocenter_location):
         if self.last_event_hypocenter is None:
             raise ValueError('location must be run prior to calculating the '
                              'rays. To locate an event, use the run_location '
                              'method.')
-        return self.travel_times.ray_tracer(self.last_event_hypocenter)
+        return self.travel_times.ray_tracer(hypocenter_location)
 
 
     @property
@@ -1735,6 +1735,32 @@ def read_hypocenter_file(filename, units='METER'):
         hyp_z = float(hyp[6]) * 1000
 
         return tme, hyp_x, hyp_y, hyp_z
+
+
+def read_scatter_file(filename):
+    """
+    :param filename: name of the scatter file to read
+    :return: a numpy array of the points in the scatter file
+    """
+
+    f = open(filename, 'rb')
+
+    nsamples = unpack('i', f.read(4))[0]
+    unpack('f', f.read(4))
+    unpack('f', f.read(4))
+    unpack('f', f.read(4))
+
+    points = []
+
+    for k in range(0, nsamples):
+        x = unpack('f', f.read(4))[0] * 1000
+        y = unpack('f', f.read(4))[0] * 1000
+        z = unpack('f', f.read(4))[0] * 1000
+        pdf = unpack('f', f.read(4))[0]
+
+        points.append([x, y, z, pdf])
+
+    return np.array(points)
 
 
 def read_nlloc_hypocenter_file(filename, picks=None,
