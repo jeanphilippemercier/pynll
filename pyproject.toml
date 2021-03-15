@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nlloc"
-version = "0.2.2"
+version = "0.2.3"
 description = "wrapper around A. Lomax NLLoc"
 authors = ["jpmercier <jpmercier01@gmail.com>"]
 license = "GNU GENERAL PUBLIC LICENSE Version 3"
