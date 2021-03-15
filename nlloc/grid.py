@@ -25,6 +25,7 @@ from loguru import logger
 import skfmm
 from multiprocessing import Pool, cpu_count
 from functools import partial
+from typing import Optional
 
 __cpu_count__ = cpu_count()
 
@@ -1063,21 +1064,31 @@ class TravelTimeEnsemble:
 
         return cls(tt_grids)
 
-    def select(self, seed_labels=None):
+    def select(self, seed_labels: Optional[list] = None,
+               phase: Optional[list] = None):
         """
         return the a list of grid corresponding to seed_labels.
         :param seed_labels: seed labels of the travel time grids to return
+        :param phase: the phase {'P' or 'S'}, both if None.
         :return: a list of travel time grids
         :rtype: TravelTimeEnsemble
         """
 
-        if seed_labels is None:
+        if (seed_labels is None) and (phase is None):
             return self
+
+        tmp = []
+        if seed_labels is None:
+            seed_labels = np.unique(self.seed_labels)
+
+        if phase is None:
+            phase = ['P', 'S']
 
         returned_grids = []
         for travel_time_grid in self.travel_time_grids:
             if travel_time_grid.seed_label in seed_labels:
-                returned_grids.append(travel_time_grid)
+                if travel_time_grid.phase in phase:
+                    returned_grids.append(travel_time_grid)
 
         return TravelTimeEnsemble(returned_grids)
 
